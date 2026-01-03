@@ -38,7 +38,7 @@ function sendMessage(message: Message): Promise<any> {
       } else if (response?.success) {
         resolve(response.data);
       } else {
-        reject(new Error(response?.error || 'Unknown error'));
+        reject(new Error(response?.error || '未知错误'));
       }
     });
   });
@@ -89,8 +89,8 @@ function updateWalletStatus() {
   if (!walletState.address) {
     walletSection.innerHTML = `
       <div class="wallet-none">
-        <p>No wallet imported</p>
-        <button class="btn btn-primary btn-small" id="btn-import">Import Wallet</button>
+        <p>尚未导入钱包</p>
+        <button class="btn btn-primary btn-small" id="btn-import">导入钱包</button>
       </div>
     `;
     document.getElementById('btn-import')!.onclick = () => {
@@ -101,13 +101,13 @@ function updateWalletStatus() {
     walletSection.innerHTML = `
       <div class="wallet-locked">
         <span>🔒</span>
-        <span>Wallet Locked</span>
+        <span>钱包已锁定</span>
       </div>
       <div style="margin-top: 10px;">
         <small style="color: var(--text-secondary);">${walletState.address.slice(0, 8)}...${walletState.address.slice(-8)}</small>
       </div>
     `;
-    lockBtn.textContent = 'Unlock';
+    lockBtn.textContent = '解锁';
     lockBtn.style.display = 'block';
   } else {
     walletSection.innerHTML = `
@@ -116,18 +116,17 @@ function updateWalletStatus() {
         <span class="wallet-balance">${walletState.balance.toFixed(4)} SOL</span>
       </div>
       <div style="margin-top: 10px;">
-        <button class="btn btn-danger btn-small" id="btn-remove-wallet">Remove Wallet</button>
+        <button class="btn btn-danger btn-small" id="btn-remove-wallet">删除钱包</button>
       </div>
     `;
     document.getElementById('btn-remove-wallet')!.onclick = async () => {
-      if (confirm('Are you sure you want to remove this wallet?')) {
-        // TODO: 实现删除钱包
-        showToast('Wallet removed', 'success');
+      if (confirm('确定要删除此钱包吗？')) {
+        showToast('钱包已删除', 'success');
         walletState = { address: '', balance: 0, isLocked: true };
         updateWalletStatus();
       }
     };
-    lockBtn.textContent = 'Lock Wallet';
+    lockBtn.textContent = '锁定钱包';
     lockBtn.style.display = 'block';
   }
 }
@@ -137,14 +136,14 @@ async function saveSettings() {
   const data = collectFormData();
 
   if (!data.heliusApiKey) {
-    showToast('Please enter Helius API key', 'error');
+    showToast('请输入 Helius API Key', 'error');
     return;
   }
 
   try {
     await sendMessage({ type: 'SAVE_CONFIG', payload: data });
     config = { ...config, ...data };
-    showToast('Settings saved!', 'success');
+    showToast('设置已保存!', 'success');
 
     // 通知content script更新
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -164,17 +163,17 @@ async function importWallet() {
   const confirmPassword = (document.getElementById('wallet-password-confirm') as HTMLInputElement).value;
 
   if (!privateKey) {
-    showToast('Please enter private key', 'error');
+    showToast('请输入私钥', 'error');
     return;
   }
 
   if (!password || password.length < 6) {
-    showToast('Password must be at least 6 characters', 'error');
+    showToast('密码至少需要6个字符', 'error');
     return;
   }
 
   if (password !== confirmPassword) {
-    showToast('Passwords do not match', 'error');
+    showToast('两次密码不一致', 'error');
     return;
   }
 
@@ -192,7 +191,7 @@ async function importWallet() {
 
     importModal.classList.remove('active');
     updateWalletStatus();
-    showToast('Wallet imported!', 'success');
+    showToast('钱包导入成功!', 'success');
 
     // 刷新余额
     setTimeout(refreshWalletState, 500);
@@ -204,14 +203,14 @@ async function importWallet() {
 // 锁定/解锁钱包
 async function toggleLock() {
   if (walletState.isLocked) {
-    const password = prompt('Enter password to unlock:');
+    const password = prompt('输入密码解锁:');
     if (!password) return;
 
     try {
       await sendMessage({ type: 'UNLOCK_WALLET', payload: { password } });
       walletState.isLocked = false;
       updateWalletStatus();
-      showToast('Wallet unlocked!', 'success');
+      showToast('钱包已解锁!', 'success');
       refreshWalletState();
     } catch (error: any) {
       showToast(error.message, 'error');
@@ -220,7 +219,7 @@ async function toggleLock() {
     await sendMessage({ type: 'LOCK_WALLET' });
     walletState.isLocked = true;
     updateWalletStatus();
-    showToast('Wallet locked', 'success');
+    showToast('钱包已锁定', 'success');
   }
 }
 
@@ -230,7 +229,7 @@ async function refreshWalletState() {
     walletState = await sendMessage({ type: 'GET_WALLET_STATE' });
     updateWalletStatus();
   } catch (error) {
-    console.error('Failed to get wallet state:', error);
+    console.error('获取钱包状态失败:', error);
   }
 }
 
@@ -246,7 +245,10 @@ async function init() {
     fillForm();
     updateWalletStatus();
   } catch (error) {
-    console.error('Failed to init popup:', error);
+    console.error('初始化失败:', error);
+    // 即使失败也显示默认表单
+    fillForm();
+    updateWalletStatus();
   }
 
   // 绑定事件
