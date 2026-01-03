@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sol Sniper Settings</title>
+  <title>极速交易 - 设置</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <header class="popup-header">
       <div class="popup-title">
         <svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#e94560"/><path d="M7 12h10M12 7l5 5-5 5" stroke="white" stroke-width="2" fill="none"/></svg>
-        <span>Sol Sniper</span>
+        <span>极速交易</span>
       </div>
       <div class="popup-version">v1.0.0</div>
     </header>
@@ -19,36 +19,36 @@
     <main class="popup-main">
       <!-- 钱包状态 -->
       <section class="popup-section" id="wallet-section">
-        <h2>Wallet</h2>
+        <h2>钱包</h2>
         <div id="wallet-status"></div>
       </section>
 
       <!-- API配置 -->
       <section class="popup-section">
-        <h2>API Configuration</h2>
+        <h2>API 配置</h2>
         <div class="form-group">
           <label for="helius-key">Helius API Key</label>
-          <input type="password" id="helius-key" placeholder="Enter your Helius API key">
-          <small>Get free key at <a href="https://helius.dev" target="_blank">helius.dev</a></small>
+          <input type="password" id="helius-key" placeholder="输入您的 Helius API Key">
+          <small>免费获取: <a href="https://helius.dev" target="_blank">helius.dev</a></small>
         </div>
       </section>
 
       <!-- 交易设置 -->
       <section class="popup-section">
-        <h2>Trading Settings</h2>
+        <h2>交易设置</h2>
         <div class="form-group">
-          <label for="slippage">Slippage (%)</label>
+          <label for="slippage">滑点 (%)</label>
           <input type="number" id="slippage" min="0.1" max="50" step="0.1" value="1">
         </div>
         <div class="form-group">
-          <label for="priority-fee">Priority Fee (SOL)</label>
+          <label for="priority-fee">优先费 (SOL)</label>
           <input type="number" id="priority-fee" min="0.0001" max="0.1" step="0.0001" value="0.0001">
         </div>
       </section>
 
       <!-- 买入预设 -->
       <section class="popup-section">
-        <h2>Buy Presets (SOL)</h2>
+        <h2>买入预设 (SOL)</h2>
         <div class="preset-grid">
           <input type="number" id="buy-1" min="0.01" step="0.01" value="0.36">
           <input type="number" id="buy-2" min="0.01" step="0.01" value="0.56">
@@ -59,7 +59,7 @@
 
       <!-- 卖出预设 -->
       <section class="popup-section">
-        <h2>Sell Presets (%)</h2>
+        <h2>卖出预设 (%)</h2>
         <div class="preset-grid">
           <input type="number" id="sell-1" min="1" max="100" step="1" value="10">
           <input type="number" id="sell-2" min="1" max="100" step="1" value="30">
@@ -70,39 +70,39 @@
 
       <!-- 安全设置 -->
       <section class="popup-section">
-        <h2>Security</h2>
+        <h2>安全设置</h2>
         <div class="form-group">
-          <label for="auto-lock">Auto Lock (minutes)</label>
+          <label for="auto-lock">自动锁定 (分钟)</label>
           <input type="number" id="auto-lock" min="1" max="1440" value="30">
         </div>
       </section>
     </main>
 
     <footer class="popup-footer">
-      <button class="btn btn-secondary" id="btn-lock">Lock Wallet</button>
-      <button class="btn btn-primary" id="btn-save">Save Settings</button>
+      <button class="btn btn-secondary" id="btn-lock">锁定钱包</button>
+      <button class="btn btn-primary" id="btn-save">保存设置</button>
     </footer>
   </div>
 
   <!-- 导入钱包弹窗 -->
   <div class="modal" id="import-modal">
     <div class="modal-content">
-      <h3>Import Wallet</h3>
+      <h3>导入钱包</h3>
       <div class="form-group">
-        <label for="private-key">Private Key (Base58)</label>
-        <input type="password" id="private-key" placeholder="Enter private key">
+        <label for="private-key">私钥 (Base58格式)</label>
+        <input type="password" id="private-key" placeholder="输入私钥">
       </div>
       <div class="form-group">
-        <label for="wallet-password">Password</label>
-        <input type="password" id="wallet-password" placeholder="Create a password">
+        <label for="wallet-password">密码</label>
+        <input type="password" id="wallet-password" placeholder="设置密码">
       </div>
       <div class="form-group">
-        <label for="wallet-password-confirm">Confirm Password</label>
-        <input type="password" id="wallet-password-confirm" placeholder="Confirm password">
+        <label for="wallet-password-confirm">确认密码</label>
+        <input type="password" id="wallet-password-confirm" placeholder="再次输入密码">
       </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="btn-cancel-import">Cancel</button>
-        <button class="btn btn-primary" id="btn-confirm-import">Import</button>
+        <button class="btn btn-secondary" id="btn-cancel-import">取消</button>
+        <button class="btn btn-primary" id="btn-confirm-import">导入</button>
       </div>
     </div>
   </div>

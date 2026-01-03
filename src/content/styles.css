@@ -264,8 +264,16 @@
 }
 
 .sol-sniper-locked-text {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.sol-sniper-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 8px;
 }
 
 .sol-sniper-unlock-btn {
