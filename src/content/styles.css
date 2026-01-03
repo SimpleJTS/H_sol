@@ -1,0 +1,340 @@
+/* Sol Sniper 悬浮窗样式 - 深色主题 */
+
+#sol-sniper-root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f0f1a;
+  --accent: #e94560;
+  --accent-hover: #ff6b6b;
+  --success: #00d26a;
+  --warning: #ffc107;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --border: #2d2d44;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  position: fixed;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  user-select: none;
+}
+
+.sol-sniper-panel {
+  width: 280px;
+  min-height: 200px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  resize: both;
+  min-width: 240px;
+  max-width: 400px;
+  min-height: 180px;
+  max-height: 500px;
+}
+
+/* 标题栏 */
+.sol-sniper-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  cursor: move;
+  border-bottom: 1px solid var(--border);
+}
+
+.sol-sniper-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sol-sniper-title svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--accent);
+}
+
+.sol-sniper-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.sol-sniper-btn-icon {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sol-sniper-btn-icon:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sol-sniper-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 内容区 */
+.sol-sniper-body {
+  padding: 12px;
+}
+
+/* 余额显示 */
+.sol-sniper-balance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.sol-sniper-balance-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.sol-sniper-balance-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sol-sniper-balance-unit {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* CA输入 */
+.sol-sniper-input-group {
+  margin-bottom: 12px;
+}
+
+.sol-sniper-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.sol-sniper-input:focus {
+  border-color: var(--accent);
+}
+
+.sol-sniper-input::placeholder {
+  color: var(--text-secondary);
+}
+
+/* 按钮组 */
+.sol-sniper-section {
+  margin-bottom: 12px;
+}
+
+.sol-sniper-section-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sol-sniper-btn-group {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.sol-sniper-btn {
+  padding: 10px 8px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sol-sniper-btn-buy {
+  background: linear-gradient(135deg, #00d26a 0%, #00a854 100%);
+  color: white;
+}
+
+.sol-sniper-btn-buy:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 210, 106, 0.3);
+}
+
+.sol-sniper-btn-buy:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.sol-sniper-btn-sell {
+  background: linear-gradient(135deg, #e94560 0%, #c73e54 100%);
+  color: white;
+}
+
+.sol-sniper-btn-sell:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(233, 69, 96, 0.3);
+}
+
+.sol-sniper-btn-sell:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.sol-sniper-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 状态指示器 */
+.sol-sniper-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.sol-sniper-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.sol-sniper-status-dot.ready {
+  background: var(--success);
+  animation: pulse 2s infinite;
+}
+
+.sol-sniper-status-dot.loading {
+  background: var(--warning);
+  animation: blink 0.5s infinite;
+}
+
+.sol-sniper-status-dot.error {
+  background: var(--accent);
+}
+
+.sol-sniper-status-text {
+  color: var(--text-secondary);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 锁定界面 */
+.sol-sniper-locked {
+  padding: 20px;
+  text-align: center;
+}
+
+.sol-sniper-locked-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.sol-sniper-locked-text {
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.sol-sniper-unlock-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.sol-sniper-unlock-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* 密码输入弹窗 */
+.sol-sniper-password-modal {
+  padding: 16px;
+}
+
+.sol-sniper-password-modal input {
+  margin-bottom: 12px;
+}
+
+/* 最小化状态 */
+.sol-sniper-panel.minimized {
+  min-height: auto;
+  resize: none;
+}
+
+.sol-sniper-panel.minimized .sol-sniper-body {
+  display: none;
+}
+
+/* Toast 通知 */
+.sol-sniper-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  z-index: 2147483647;
+  animation: slideUp 0.3s ease;
+}
+
+.sol-sniper-toast.success {
+  border-color: var(--success);
+}
+
+.sol-sniper-toast.error {
+  border-color: var(--accent);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

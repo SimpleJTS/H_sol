@@ -1,0 +1,20 @@
+{
+  "name": "sol-sniper",
+  "version": "1.0.0",
+  "description": "Solana快捷交易Chrome插件",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build && node scripts/post-build.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.4",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

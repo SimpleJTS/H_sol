@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sol Sniper Settings</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="popup-title">
+        <svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#e94560"/><path d="M7 12h10M12 7l5 5-5 5" stroke="white" stroke-width="2" fill="none"/></svg>
+        <span>Sol Sniper</span>
+      </div>
+      <div class="popup-version">v1.0.0</div>
+    </header>
+
+    <main class="popup-main">
+      <!-- 钱包状态 -->
+      <section class="popup-section" id="wallet-section">
+        <h2>Wallet</h2>
+        <div id="wallet-status"></div>
+      </section>
+
+      <!-- API配置 -->
+      <section class="popup-section">
+        <h2>API Configuration</h2>
+        <div class="form-group">
+          <label for="helius-key">Helius API Key</label>
+          <input type="password" id="helius-key" placeholder="Enter your Helius API key">
+          <small>Get free key at <a href="https://helius.dev" target="_blank">helius.dev</a></small>
+        </div>
+      </section>
+
+      <!-- 交易设置 -->
+      <section class="popup-section">
+        <h2>Trading Settings</h2>
+        <div class="form-group">
+          <label for="slippage">Slippage (%)</label>
+          <input type="number" id="slippage" min="0.1" max="50" step="0.1" value="1">
+        </div>
+        <div class="form-group">
+          <label for="priority-fee">Priority Fee (SOL)</label>
+          <input type="number" id="priority-fee" min="0.0001" max="0.1" step="0.0001" value="0.0001">
+        </div>
+      </section>
+
+      <!-- 买入预设 -->
+      <section class="popup-section">
+        <h2>Buy Presets (SOL)</h2>
+        <div class="preset-grid">
+          <input type="number" id="buy-1" min="0.01" step="0.01" value="0.36">
+          <input type="number" id="buy-2" min="0.01" step="0.01" value="0.56">
+          <input type="number" id="buy-3" min="0.01" step="0.01" value="0.86">
+          <input type="number" id="buy-4" min="0.01" step="0.01" value="1.06">
+        </div>
+      </section>
+
+      <!-- 卖出预设 -->
+      <section class="popup-section">
+        <h2>Sell Presets (%)</h2>
+        <div class="preset-grid">
+          <input type="number" id="sell-1" min="1" max="100" step="1" value="10">
+          <input type="number" id="sell-2" min="1" max="100" step="1" value="30">
+          <input type="number" id="sell-3" min="1" max="100" step="1" value="50">
+          <input type="number" id="sell-4" min="1" max="100" step="1" value="100">
+        </div>
+      </section>
+
+      <!-- 安全设置 -->
+      <section class="popup-section">
+        <h2>Security</h2>
+        <div class="form-group">
+          <label for="auto-lock">Auto Lock (minutes)</label>
+          <input type="number" id="auto-lock" min="1" max="1440" value="30">
+        </div>
+      </section>
+    </main>
+
+    <footer class="popup-footer">
+      <button class="btn btn-secondary" id="btn-lock">Lock Wallet</button>
+      <button class="btn btn-primary" id="btn-save">Save Settings</button>
+    </footer>
+  </div>
+
+  <!-- 导入钱包弹窗 -->
+  <div class="modal" id="import-modal">
+    <div class="modal-content">
+      <h3>Import Wallet</h3>
+      <div class="form-group">
+        <label for="private-key">Private Key (Base58)</label>
+        <input type="password" id="private-key" placeholder="Enter private key">
+      </div>
+      <div class="form-group">
+        <label for="wallet-password">Password</label>
+        <input type="password" id="wallet-password" placeholder="Create a password">
+      </div>
+      <div class="form-group">
+        <label for="wallet-password-confirm">Confirm Password</label>
+        <input type="password" id="wallet-password-confirm" placeholder="Confirm password">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btn-cancel-import">Cancel</button>
+        <button class="btn btn-primary" id="btn-confirm-import">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="index.js"></script>
+</body>
+</html>
