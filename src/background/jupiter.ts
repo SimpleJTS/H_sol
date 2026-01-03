@@ -26,9 +26,17 @@ export class JupiterClient {
     url.searchParams.set('amount', inputAmount.toString());
     url.searchParams.set('slippageBps', this.slippageBps.toString());
 
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error(`Jupiter quote failed: ${response.status}`);
-    return response.json();
+    try {
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`获取报价失败: ${response.status} ${errorText}`);
+      }
+      return response.json();
+    } catch (error: any) {
+      if (error.message.includes('获取报价失败')) throw error;
+      throw new Error(`网络错误: ${error.message}`);
+    }
   }
 
   // 获取卖出报价 (Token -> SOL)
@@ -40,9 +48,17 @@ export class JupiterClient {
     url.searchParams.set('amount', inputAmount.toString());
     url.searchParams.set('slippageBps', this.slippageBps.toString());
 
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error(`Jupiter quote failed: ${response.status}`);
-    return response.json();
+    try {
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`获取报价失败: ${response.status} ${errorText}`);
+      }
+      return response.json();
+    } catch (error: any) {
+      if (error.message.includes('获取报价失败')) throw error;
+      throw new Error(`网络错误: ${error.message}`);
+    }
   }
 
   // 获取Swap交易
@@ -50,20 +66,28 @@ export class JupiterClient {
     quote: JupiterQuote,
     userPublicKey: string
   ): Promise<JupiterSwapResponse> {
-    const response = await fetch(JUPITER_SWAP_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        quoteResponse: quote,
-        userPublicKey,
-        wrapAndUnwrapSol: true,
-        dynamicComputeUnitLimit: true,
-        prioritizationFeeLamports: this.priorityFee,
-      }),
-    });
+    try {
+      const response = await fetch(JUPITER_SWAP_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteResponse: quote,
+          userPublicKey,
+          wrapAndUnwrapSol: true,
+          dynamicComputeUnitLimit: true,
+          prioritizationFeeLamports: this.priorityFee,
+        }),
+      });
 
-    if (!response.ok) throw new Error(`Jupiter swap failed: ${response.status}`);
-    return response.json();
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`获取交易失败: ${response.status} ${errorText}`);
+      }
+      return response.json();
+    } catch (error: any) {
+      if (error.message.includes('获取交易失败')) throw error;
+      throw new Error(`网络错误: ${error.message}`);
+    }
   }
 
   // 预加载买入交易 (返回多个金额的交易)
@@ -77,7 +101,10 @@ export class JupiterClient {
     // 并行获取所有报价
     const quotes = await Promise.all(
       amounts.map((amount) =>
-        this.getBuyQuote(tokenMint, amount).catch(() => null)
+        this.getBuyQuote(tokenMint, amount).catch((e) => {
+          console.error(`[Jupiter] 获取报价失败 ${amount} SOL:`, e.message);
+          return null;
+        })
       )
     );
 
@@ -86,7 +113,10 @@ export class JupiterClient {
       if (!quote) return null;
       return this.getSwapTransaction(quote, userPublicKey)
         .then((swap) => ({ amount: amounts[i], quote, swapTx: swap.swapTransaction }))
-        .catch(() => null);
+        .catch((e) => {
+          console.error(`[Jupiter] 获取交易失败 ${amounts[i]} SOL:`, e.message);
+          return null;
+        });
     });
 
     const swaps = await Promise.all(swapPromises);
@@ -102,15 +132,14 @@ export class JupiterClient {
 
   // 获取Token信息 (decimals)
   async getTokenDecimals(mint: string): Promise<number> {
-    // 使用Jupiter的token list缓存
     try {
       const response = await fetch(`https://tokens.jup.ag/token/${mint}`);
       if (response.ok) {
         const data = await response.json();
         return data.decimals || 9;
       }
-    } catch {
-      // fallback
+    } catch (e) {
+      console.error('[Jupiter] 获取代币信息失败:', e);
     }
     return 9; // 默认9位小数
   }
