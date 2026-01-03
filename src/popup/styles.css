@@ -127,13 +127,26 @@ body {
 .preset-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .preset-grid input {
-  padding: 10px 8px;
+  padding: 8px 4px;
   text-align: center;
   font-weight: 600;
+  font-size: 13px;
+  min-width: 0;
+}
+
+/* 隐藏number input的箭头 */
+.preset-grid input::-webkit-outer-spin-button,
+.preset-grid input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.preset-grid input[type=number] {
+  -moz-appearance: textfield;
 }
 
 /* Wallet Status */

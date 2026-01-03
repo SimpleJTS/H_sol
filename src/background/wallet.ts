@@ -52,14 +52,14 @@ export class WalletManager {
 
       return address;
     } catch (error) {
-      throw new Error('Invalid private key format');
+      throw new Error('私钥格式无效');
     }
   }
 
   // 解锁钱包
   async unlock(password: string): Promise<boolean> {
     const stored = await getEncryptedKey();
-    if (!stored) throw new Error('No wallet found');
+    if (!stored) throw new Error('未找到钱包');
 
     try {
       const privateKey = await decrypt(stored.encryptedKey, password);
@@ -69,7 +69,7 @@ export class WalletManager {
       this.resetLockTimer();
       return true;
     } catch {
-      throw new Error('Invalid password');
+      throw new Error('密码错误');
     }
   }
 
@@ -101,7 +101,7 @@ export class WalletManager {
 
   // 签名交易 (支持legacy和versioned)
   signTransaction(txBase64: string): string {
-    if (!this.keypair) throw new Error('Wallet is locked');
+    if (!this.keypair) throw new Error('钱包已锁定');
 
     this.resetLockTimer();
 
