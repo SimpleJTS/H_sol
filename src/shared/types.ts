@@ -9,6 +9,7 @@ export interface Config {
   sellPresets: [number, number, number, number]; // 4个卖出预设 (%)
   autoLockMinutes: number;
   allowedSites: string[]; // 允许显示插件的网站列表（空数组表示所有网站）
+  enableCache: boolean; // 是否启用缓存预加载
 }
 
 // 默认配置
@@ -22,6 +23,7 @@ export const DEFAULT_CONFIG: Config = {
   sellPresets: [10, 30, 50, 100],
   autoLockMinutes: 30,
   allowedSites: [], // 空数组表示所有网站都显示
+  enableCache: true, // 默认启用缓存预加载
 };
 
 // 钱包状态

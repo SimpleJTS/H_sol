@@ -21,6 +21,7 @@ interface PreloadCache {
 
 let preloadCache: PreloadCache | null = null;
 const CACHE_TTL = 10000; // 10秒过期
+const CACHE_FRESH_THRESHOLD = 5000; // 5秒内认为是新鲜的，可以直接使用
 let cacheRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const CACHE_REFRESH_INTERVAL = 8000; // 8秒刷新一次（在过期前刷新）
 
@@ -130,6 +131,12 @@ async function preloadTrades(ca: string): Promise<void> {
     }
 
     const config = await getConfig();
+    
+    // 如果禁用缓存，跳过预加载
+    if (config.enableCache === false) {
+      console.log('[SolSniper] 缓存已禁用，跳过预加载');
+      return;
+    }
     const userAddress = wallet.publicKey;
     console.log('[SolSniper] 买入预设金额:', config.buyPresets);
     console.log('[SolSniper] 卖出预设百分比:', config.sellPresets);
@@ -147,13 +154,17 @@ async function preloadTrades(ca: string): Promise<void> {
     const fetchTime = performance.now() - fetchStart;
 
     // 如果token有余额，预加载卖出交易
+    // 注意：每次预加载都会重新获取最新的余额，确保数量准确
     let sellTrades = new Map<number, { quote: JupiterQuote; swapTx: string }>();
     if (tokenBalance > 0) {
       console.log('[SolSniper] Token有余额，开始预加载卖出交易...');
+      console.log('[SolSniper] 当前Token余额:', tokenBalance, '(将使用最新余额预加载)');
       const sellStart = performance.now();
       try {
-        // 获取原始余额用于计算卖出数量
+        // 重新获取原始余额用于计算卖出数量（确保使用最新余额）
+        // 即使之前已经获取过，这里也要重新获取，因为余额可能已经变化
         const rawTokenBalance = await helius.getRawTokenBalance(userAddress, ca);
+        console.log('[SolSniper] 最新原始余额:', rawTokenBalance.toString(), '(用于预加载卖出交易)');
         sellTrades = await jupiter.preloadSellTrades(ca, config.sellPresets, decimals, rawTokenBalance, userAddress);
         const sellTime = performance.now() - sellStart;
         console.log('[SolSniper] ✓ 卖出交易预加载完成，耗时:', sellTime.toFixed(2), 'ms, 成功数:', sellTrades.size);
@@ -222,13 +233,30 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
 
     let swapTx: string;
     let stepStart: number;
+    let useCache = false;
 
-    // 检查缓存
-    if (isCacheValid(ca) && preloadCache!.buyTrades.has(amount)) {
-      console.log('[SolSniper] ✓ 使用缓存的交易数据');
-      swapTx = preloadCache!.buyTrades.get(amount)!.swapTx;
-      timings['使用缓存'] = 0;
-    } else {
+    // 检查配置是否启用缓存
+    const config = await getConfig();
+    const cacheEnabled = config.enableCache !== false; // 默认 true
+
+    // 检查缓存 - 只有在缓存新鲜时才使用（避免交易过期）
+    if (cacheEnabled && isCacheValid(ca) && preloadCache!.buyTrades.has(amount)) {
+      const cacheAge = Date.now() - preloadCache!.timestamp;
+      if (cacheAge < CACHE_FRESH_THRESHOLD) {
+        // 缓存新鲜，直接使用
+        console.log('[SolSniper] ✓ 使用缓存的交易数据（缓存年龄:', cacheAge, 'ms）');
+        swapTx = preloadCache!.buyTrades.get(amount)!.swapTx;
+        timings['使用缓存'] = 0;
+        useCache = true;
+      } else {
+        // 缓存不够新鲜，重新获取报价和构建交易（确保交易有效）
+        console.log('[SolSniper] ⚠ 缓存不够新鲜（年龄:', cacheAge, 'ms），重新获取交易');
+      }
+    } else if (!cacheEnabled) {
+      console.log('[SolSniper] 缓存已禁用，实时获取交易');
+    }
+
+    if (!useCache) {
       // 实时获取
       console.log('[SolSniper] → 获取买入报价...');
       stepStart = performance.now();
@@ -247,17 +275,85 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
     // 签名
     console.log('[SolSniper] → 签名交易...');
     stepStart = performance.now();
-    const signedTx = wallet.signTransaction(swapTx);
-    timings['签名交易'] = performance.now() - stepStart;
-    console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易'].toFixed(2), 'ms');
-    console.log('[SolSniper] 签名后交易长度:', signedTx.length, '字符');
+    let signedTx: string;
+    try {
+      signedTx = wallet.signTransaction(swapTx);
+      timings['签名交易'] = performance.now() - stepStart;
+      console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易'].toFixed(2), 'ms');
+      console.log('[SolSniper] 签名后交易长度:', signedTx.length, '字符');
+    } catch (signError: any) {
+      // 如果签名失败且使用了缓存，可能是交易过期，尝试重新获取
+      if (useCache) {
+        console.warn('[SolSniper] ⚠ 缓存交易签名失败，可能是交易过期，重新获取交易...');
+        console.warn('[SolSniper] 错误:', signError.message || signError);
+        
+        // 重新获取报价和构建交易
+        console.log('[SolSniper] → 重新获取买入报价...');
+        stepStart = performance.now();
+        const quote = await jupiter.getBuyQuote(ca, amount);
+        timings['获取报价(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 报价获取成功，耗时:', timings['获取报价(重试)'].toFixed(2), 'ms');
+        
+        console.log('[SolSniper] → 重新构建交易...');
+        stepStart = performance.now();
+        const swap = await jupiter.getSwapTransaction(quote, wallet.publicKey);
+        timings['构建交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易构建成功，耗时:', timings['构建交易(重试)'].toFixed(2), 'ms');
+        swapTx = swap.swapTransaction;
+        
+        // 重新签名
+        stepStart = performance.now();
+        signedTx = wallet.signTransaction(swapTx);
+        timings['签名交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易(重试)'].toFixed(2), 'ms');
+      } else {
+        throw signError;
+      }
+    }
 
     // 发送
     console.log('[SolSniper] → 发送交易到链上...');
     stepStart = performance.now();
-    const signature = await helius.sendTransaction(signedTx);
-    timings['发送交易'] = performance.now() - stepStart;
-    console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易'].toFixed(2), 'ms');
+    let signature: string;
+    try {
+      signature = await helius.sendTransaction(signedTx);
+      timings['发送交易'] = performance.now() - stepStart;
+      console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易'].toFixed(2), 'ms');
+    } catch (sendError: any) {
+      // 如果发送失败且使用了缓存，可能是交易过期，尝试重新获取
+      if (useCache) {
+        console.warn('[SolSniper] ⚠ 缓存交易发送失败，可能是交易过期，重新获取交易...');
+        console.warn('[SolSniper] 错误:', sendError.message || sendError);
+        
+        // 重新获取报价和构建交易
+        console.log('[SolSniper] → 重新获取买入报价...');
+        stepStart = performance.now();
+        const quote = await jupiter.getBuyQuote(ca, amount);
+        timings['获取报价(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 报价获取成功，耗时:', timings['获取报价(重试)'].toFixed(2), 'ms');
+        
+        console.log('[SolSniper] → 重新构建交易...');
+        stepStart = performance.now();
+        const swap = await jupiter.getSwapTransaction(quote, wallet.publicKey);
+        timings['构建交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易构建成功，耗时:', timings['构建交易(重试)'].toFixed(2), 'ms');
+        swapTx = swap.swapTransaction;
+        
+        // 重新签名
+        stepStart = performance.now();
+        signedTx = wallet.signTransaction(swapTx);
+        timings['签名交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易(重试)'].toFixed(2), 'ms');
+        
+        // 重新发送
+        stepStart = performance.now();
+        signature = await helius.sendTransaction(signedTx);
+        timings['发送交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易(重试)'].toFixed(2), 'ms');
+      } else {
+        throw sendError;
+      }
+    }
     
     const totalTime = performance.now() - startTime;
     timings['总耗时'] = totalTime;
@@ -291,6 +387,7 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
 async function executeSell(ca: string, percent: number): Promise<string> {
   const startTime = performance.now();
   const timings: Record<string, number> = {};
+  let stepStart: number;
   
   try {
     console.log('[SolSniper] ========== 开始卖出交易 ==========');
@@ -302,50 +399,67 @@ async function executeSell(ca: string, percent: number): Promise<string> {
       throw new Error('Wallet not configured');
     }
 
+    // 卖出时始终获取最新的token余额（因为余额可能在预加载后发生了变化）
+    // 即使使用缓存交易，也要重新获取余额以确保数量准确
+    console.log('[SolSniper] → 获取最新Token余额和精度...');
+    stepStart = performance.now();
+    const [tokenBalance, decimals] = await Promise.all([
+      helius.getTokenBalance(wallet.publicKey, ca),
+      jupiter.getTokenDecimals(ca),
+    ]);
+    timings['获取余额'] = performance.now() - stepStart;
+    console.log('[SolSniper] ✓ 余额获取成功，耗时:', timings['获取余额'].toFixed(2), 'ms');
+    console.log('[SolSniper]   最新余额:', tokenBalance, '精度:', decimals);
+
+    if (tokenBalance === 0) {
+      throw new Error('No token balance');
+    }
+
+    // 获取原始余额（最小单位）用于精确计算
+    console.log('[SolSniper] → 获取最新原始余额（用于精确计算）...');
+    stepStart = performance.now();
+    const rawTokenBalance = await helius.getRawTokenBalance(wallet.publicKey, ca);
+    timings['获取原始余额'] = performance.now() - stepStart;
+    console.log('[SolSniper] ✓ 原始余额获取成功，耗时:', timings['获取原始余额'].toFixed(2), 'ms');
+    console.log('[SolSniper]   最新原始余额:', rawTokenBalance.toString());
+
     // 检查缓存中是否有预加载的卖出交易
     let swapTx: string;
-    let stepStart: number;
+    let useCache = false;
 
-    if (isCacheValid(ca) && preloadCache!.sellTrades.has(percent)) {
-      console.log('[SolSniper] ✓ 使用缓存的卖出交易数据');
-      swapTx = preloadCache!.sellTrades.get(percent)!.swapTx;
-      timings['使用缓存'] = 0;
-    } else {
-      // 获取token余额
-      let tokenBalance: number;
-      let decimals: number;
-
-      if (isCacheValid(ca)) {
-        console.log('[SolSniper] ✓ 使用缓存的余额和精度信息');
-        tokenBalance = preloadCache!.tokenBalance;
-        decimals = preloadCache!.tokenDecimals;
-        timings['获取余额(缓存)'] = 0;
+    // 检查配置是否启用缓存
+    const config = await getConfig();
+    const cacheEnabled = config.enableCache !== false; // 默认 true
+    
+    // 检查缓存 - 只有在缓存新鲜时才使用（避免交易过期）
+    // 但即使使用缓存，也要验证余额是否匹配（如果余额变化太大，应该重新构建交易）
+    if (cacheEnabled && isCacheValid(ca) && preloadCache!.sellTrades.has(percent)) {
+      const cacheAge = Date.now() - preloadCache!.timestamp;
+      const cachedBalance = preloadCache!.tokenBalance;
+      const balanceDiff = Math.abs(tokenBalance - cachedBalance);
+      const balanceChangePercent = cachedBalance > 0 ? (balanceDiff / cachedBalance) * 100 : 0;
+      
+      // 如果缓存新鲜且余额变化不大（<5%），可以使用缓存
+      if (cacheAge < CACHE_FRESH_THRESHOLD && balanceChangePercent < 5) {
+        console.log('[SolSniper] ✓ 使用缓存的卖出交易数据（缓存年龄:', cacheAge, 'ms, 余额变化:', balanceChangePercent.toFixed(2) + '%）');
+        swapTx = preloadCache!.sellTrades.get(percent)!.swapTx;
+        timings['使用缓存'] = 0;
+        useCache = true;
       } else {
-        console.log('[SolSniper] → 获取Token余额和精度...');
-        stepStart = performance.now();
-        [tokenBalance, decimals] = await Promise.all([
-          helius.getTokenBalance(wallet.publicKey, ca),
-          jupiter.getTokenDecimals(ca),
-        ]);
-        timings['获取余额'] = performance.now() - stepStart;
-        console.log('[SolSniper] ✓ 余额获取成功，耗时:', timings['获取余额'].toFixed(2), 'ms');
-        console.log('[SolSniper]   余额:', tokenBalance, '精度:', decimals);
+        if (balanceChangePercent >= 5) {
+          console.log('[SolSniper] ⚠ 余额变化较大（', balanceChangePercent.toFixed(2) + '%），重新获取交易');
+        } else {
+          console.log('[SolSniper] ⚠ 缓存不够新鲜（年龄:', cacheAge, 'ms），重新获取交易');
+        }
       }
+    } else if (!cacheEnabled) {
+      console.log('[SolSniper] 缓存已禁用，实时获取交易');
+    }
 
-      if (tokenBalance === 0) {
-        throw new Error('No token balance');
-      }
-
+    if (!useCache) {
       // 计算卖出数量
       // 为了避免精度丢失，使用原始余额（最小单位）来计算百分比
       // 然后转换为 UI 数量传递给 Jupiter API
-      
-      // 获取原始余额（最小单位）
-      console.log('[SolSniper] → 获取原始余额（用于精确计算）...');
-      stepStart = performance.now();
-      const rawTokenBalance = await helius.getRawTokenBalance(wallet.publicKey, ca);
-      timings['获取原始余额'] = performance.now() - stepStart;
-      console.log('[SolSniper] ✓ 原始余额获取成功，耗时:', timings['获取原始余额'].toFixed(2), 'ms');
       
       if (rawTokenBalance === 0) {
         throw new Error('No token balance');
@@ -359,6 +473,7 @@ async function executeSell(ca: string, percent: number): Promise<string> {
       }
       
       // 转换为 UI 数量（用于显示和日志）
+      // 注意：这里使用精确的除法，但传递给 Jupiter 时应该使用原始数量
       const sellAmount = rawSellAmount / Math.pow(10, decimals);
       
       console.log('[SolSniper] 卖出计算详情:', {
@@ -368,14 +483,33 @@ async function executeSell(ca: string, percent: number): Promise<string> {
         '原始卖出数量': rawSellAmount.toString(),
         'UI卖出数量': sellAmount,
         '精度': decimals,
+        '验证': {
+          '原始数量转回UI': (rawSellAmount / Math.pow(10, decimals)),
+          'UI数量转回原始': Math.floor(sellAmount * Math.pow(10, decimals)).toString(),
+          '是否匹配': Math.floor(sellAmount * Math.pow(10, decimals)) === rawSellAmount
+        }
       });
 
-      // 获取报价和交易（传入 UI 数量，内部会转换为原始数量）
+      // 获取报价和交易
+      // 注意：直接传递原始数量给 getSellQuote，避免精度损失
       console.log('[SolSniper] → 获取卖出报价...');
       stepStart = performance.now();
       const quote = await jupiter.getSellQuote(ca, sellAmount, decimals);
       timings['获取报价'] = performance.now() - stepStart;
       console.log('[SolSniper] ✓ 报价获取成功，耗时:', timings['获取报价'].toFixed(2), 'ms');
+      
+      // 验证报价中的输入数量是否匹配
+      if (quote.inAmount) {
+        const quoteInputAmount = BigInt(quote.inAmount);
+        const expectedInputAmount = BigInt(rawSellAmount);
+        if (quoteInputAmount !== expectedInputAmount) {
+          console.warn('[SolSniper] ⚠ 报价输入数量不匹配:', {
+            '期望': expectedInputAmount.toString(),
+            '实际': quoteInputAmount.toString(),
+            '差异': (quoteInputAmount - expectedInputAmount).toString()
+          });
+        }
+      }
       
       console.log('[SolSniper] → 构建交易...');
       stepStart = performance.now();
@@ -388,17 +522,106 @@ async function executeSell(ca: string, percent: number): Promise<string> {
     // 签名
     console.log('[SolSniper] → 签名交易...');
     stepStart = performance.now();
-    const signedTx = wallet.signTransaction(swapTx);
-    timings['签名交易'] = performance.now() - stepStart;
-    console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易'].toFixed(2), 'ms');
-    console.log('[SolSniper] 签名后交易长度:', signedTx.length, '字符');
+    let signedTx: string;
+    try {
+      signedTx = wallet.signTransaction(swapTx);
+      timings['签名交易'] = performance.now() - stepStart;
+      console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易'].toFixed(2), 'ms');
+      console.log('[SolSniper] 签名后交易长度:', signedTx.length, '字符');
+    } catch (signError: any) {
+      // 如果签名失败且使用了缓存，可能是交易过期，尝试重新获取
+      if (useCache) {
+        console.warn('[SolSniper] ⚠ 缓存卖出交易签名失败，可能是交易过期，重新获取交易...');
+        console.warn('[SolSniper] 错误:', signError.message || signError);
+        
+        // 重新获取余额和计算卖出数量
+        console.log('[SolSniper] → 重新获取Token余额和精度...');
+        stepStart = performance.now();
+        const [tokenBalance, decimals] = await Promise.all([
+          helius.getTokenBalance(wallet.publicKey, ca),
+          jupiter.getTokenDecimals(ca),
+        ]);
+        timings['获取余额(重试)'] = performance.now() - stepStart;
+        
+        const rawTokenBalance = await helius.getRawTokenBalance(wallet.publicKey, ca);
+        const rawSellAmount = Math.floor((rawTokenBalance * percent) / 100);
+        const sellAmount = rawSellAmount / Math.pow(10, decimals);
+        
+        // 重新获取报价和构建交易
+        console.log('[SolSniper] → 重新获取卖出报价...');
+        stepStart = performance.now();
+        const quote = await jupiter.getSellQuote(ca, sellAmount, decimals);
+        timings['获取报价(重试)'] = performance.now() - stepStart;
+        
+        console.log('[SolSniper] → 重新构建交易...');
+        stepStart = performance.now();
+        const swap = await jupiter.getSwapTransaction(quote, wallet.publicKey);
+        timings['构建交易(重试)'] = performance.now() - stepStart;
+        swapTx = swap.swapTransaction;
+        
+        // 重新签名
+        stepStart = performance.now();
+        signedTx = wallet.signTransaction(swapTx);
+        timings['签名交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易(重试)'].toFixed(2), 'ms');
+      } else {
+        throw signError;
+      }
+    }
 
     // 发送
     console.log('[SolSniper] → 发送交易到链上...');
     stepStart = performance.now();
-    const signature = await helius.sendTransaction(signedTx);
-    timings['发送交易'] = performance.now() - stepStart;
-    console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易'].toFixed(2), 'ms');
+    let signature: string;
+    try {
+      signature = await helius.sendTransaction(signedTx);
+      timings['发送交易'] = performance.now() - stepStart;
+      console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易'].toFixed(2), 'ms');
+    } catch (sendError: any) {
+      // 如果发送失败且使用了缓存，可能是交易过期，尝试重新获取
+      if (useCache) {
+        console.warn('[SolSniper] ⚠ 缓存卖出交易发送失败，可能是交易过期，重新获取交易...');
+        console.warn('[SolSniper] 错误:', sendError.message || sendError);
+        
+        // 重新获取余额和计算卖出数量
+        console.log('[SolSniper] → 重新获取Token余额和精度...');
+        stepStart = performance.now();
+        const [tokenBalance, decimals] = await Promise.all([
+          helius.getTokenBalance(wallet.publicKey, ca),
+          jupiter.getTokenDecimals(ca),
+        ]);
+        timings['获取余额(重试)'] = performance.now() - stepStart;
+        
+        const rawTokenBalance = await helius.getRawTokenBalance(wallet.publicKey, ca);
+        const rawSellAmount = Math.floor((rawTokenBalance * percent) / 100);
+        const sellAmount = rawSellAmount / Math.pow(10, decimals);
+        
+        // 重新获取报价和构建交易
+        console.log('[SolSniper] → 重新获取卖出报价...');
+        stepStart = performance.now();
+        const quote = await jupiter.getSellQuote(ca, sellAmount, decimals);
+        timings['获取报价(重试)'] = performance.now() - stepStart;
+        
+        console.log('[SolSniper] → 重新构建交易...');
+        stepStart = performance.now();
+        const swap = await jupiter.getSwapTransaction(quote, wallet.publicKey);
+        timings['构建交易(重试)'] = performance.now() - stepStart;
+        swapTx = swap.swapTransaction;
+        
+        // 重新签名
+        stepStart = performance.now();
+        signedTx = wallet.signTransaction(swapTx);
+        timings['签名交易(重试)'] = performance.now() - stepStart;
+        
+        // 重新发送
+        stepStart = performance.now();
+        signature = await helius.sendTransaction(signedTx);
+        timings['发送交易(重试)'] = performance.now() - stepStart;
+        console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易(重试)'].toFixed(2), 'ms');
+      } else {
+        throw sendError;
+      }
+    }
     
     const totalTime = performance.now() - startTime;
     timings['总耗时'] = totalTime;

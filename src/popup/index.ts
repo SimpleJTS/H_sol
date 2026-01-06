@@ -28,6 +28,7 @@ const walletSection = document.getElementById('wallet-status')!;
 const importModal = document.getElementById('import-modal')!;
 const saveBtn = document.getElementById('btn-save')!;
 const allowedSitesInput = document.getElementById('allowed-sites') as HTMLTextAreaElement;
+const enableCacheInput = document.getElementById('enable-cache') as HTMLInputElement;
 
 // 发送消息
 function sendMessage(message: Message): Promise<any> {
@@ -73,6 +74,9 @@ function fillForm() {
 
   // 填充允许的网站列表
   allowedSitesInput.value = (config.allowedSites || []).join('\n');
+  
+  // 填充缓存开关
+  enableCacheInput.checked = config.enableCache !== false; // 默认 true
 }
 
 // 收集表单数据
@@ -91,6 +95,7 @@ function collectFormData(): Partial<Config> {
     buyPresets: buyInputs.map((input) => parseFloat(input.value)) as [number, number, number, number],
     sellPresets: sellInputs.map((input) => parseFloat(input.value)) as [number, number, number, number],
     allowedSites,
+    enableCache: enableCacheInput.checked,
   };
 }
 

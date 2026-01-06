@@ -123,6 +123,59 @@ body {
   text-decoration: underline;
 }
 
+/* Switch Toggle */
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-text {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.switch-label input[type="checkbox"] {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  outline: none;
+}
+
+.switch-label input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch-label input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: all 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.switch-label input[type="checkbox"]:checked::before {
+  left: 22px;
+}
+
+.switch-label input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+
 /* Preset Grid */
 .preset-grid {
   display: grid;

@@ -601,6 +601,48 @@ function isSiteAllowed(): boolean {
   return isAllowed;
 }
 
+// 从 GMGN 页面提取 CA
+function extractCAFromGMGN(): string | null {
+  try {
+    // 方法1: 从带有特定 class 的 <a> 标签中提取
+    // class: "text-text-200 css-759u60" 或包含这些 class
+    const links = Array.from(document.querySelectorAll('a.text-text-200.css-759u60, a[class*="text-text-200"][class*="css-759u60"]'));
+    
+    for (const link of links) {
+      const href = (link as HTMLAnchorElement).href;
+      // 从 solscan.io/token/ 链接中提取 token 地址
+      const match = href.match(/solscan\.io\/token\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (match && match[1]) {
+        const address = match[1];
+        // 验证是否是有效的 Solana 地址长度
+        if (address.length >= 32 && address.length <= 44) {
+          console.log('[SolSniper] 从 GMGN 页面提取到 CA:', address);
+          return address;
+        }
+      }
+    }
+    
+    // 方法2: 从所有包含 solscan.io/token/ 的链接中提取（备用方法）
+    const solscanTokenLinks = Array.from(document.querySelectorAll('a[href*="solscan.io/token/"]'));
+    for (const link of solscanTokenLinks) {
+      const href = (link as HTMLAnchorElement).href;
+      const match = href.match(/solscan\.io\/token\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (match && match[1]) {
+        const address = match[1];
+        if (address.length >= 32 && address.length <= 44) {
+          console.log('[SolSniper] 从 GMGN solscan token 链接提取到 CA:', address);
+          return address;
+        }
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[SolSniper] 从 GMGN 提取 CA 失败:', error);
+    return null;
+  }
+}
+
 // 从 AXIOM 页面提取 CA
 function extractCAFromAxiom(): string | null {
   try {
@@ -656,6 +698,20 @@ function extractCAFromAxiom(): string | null {
   }
 }
 
+// 统一的 CA 提取函数（根据网站类型调用不同的提取方法）
+function extractCAFromPage(): string | null {
+  const hostname = window.location.hostname;
+  
+  if (hostname.includes('gmgn.ai')) {
+    return extractCAFromGMGN();
+  } else if (hostname.includes('axiom.trade')) {
+    return extractCAFromAxiom();
+  }
+  
+  // 默认尝试通用方法
+  return extractCAFromAxiom();
+}
+
 // CA 提取防抖
 let caExtractionTimeout: ReturnType<typeof setTimeout> | null = null;
 let lastExtractedCA: string | null = null;
@@ -671,7 +727,7 @@ function performCAExtraction(force: boolean = false) {
   
   // 防抖：延迟执行，避免频繁提取
   caExtractionTimeout = setTimeout(() => {
-    const ca = extractCAFromAxiom();
+    const ca = extractCAFromPage();
     if (ca) {
       // 如果CA变化了，或者强制更新，则更新输入框
       if (force || ca !== lastExtractedCA) {
@@ -695,12 +751,14 @@ function performCAExtraction(force: boolean = false) {
 
 // 监听页面变化，自动提取 CA
 function startCAExtraction() {
-  // 只在 AXIOM 页面启用
-  if (!window.location.hostname.includes('axiom.trade')) {
+  const hostname = window.location.hostname;
+  
+  // 只在支持的网站启用（axiom.trade 或 gmgn.ai）
+  if (!hostname.includes('axiom.trade') && !hostname.includes('gmgn.ai')) {
     return;
   }
   
-  console.log('[SolSniper] 启动 CA 自动提取');
+  console.log('[SolSniper] 启动 CA 自动提取，网站:', hostname);
   
   // 立即尝试提取一次（延迟执行，确保 caInput 已初始化）
   setTimeout(() => {
@@ -728,7 +786,9 @@ function startCAExtraction() {
             // 如果包含 CA: 或 solscan 链接，触发提取
             if (text.includes('CA:') || 
                 el.querySelector('a[href*="solscan.io/account/"]') ||
-                el.querySelector('a[href*="solscan.io/token/"]')) {
+                el.querySelector('a[href*="solscan.io/token/"]') ||
+                el.querySelector('a.text-text-200.css-759u60') ||
+                el.querySelector('a[class*="text-text-200"][class*="css-759u60"]')) {
               shouldExtract = true;
               break;
             }
@@ -742,6 +802,18 @@ function startCAExtraction() {
         if (target) {
           const text = target.textContent || '';
           if (text.includes('CA:') || text.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/)) {
+            shouldExtract = true;
+            break;
+          }
+        }
+      }
+      
+      // 检查属性变化（class 变化可能影响 GMGN 的链接）
+      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+        const target = mutation.target as Element;
+        if (target && target.tagName === 'A') {
+          const href = (target as HTMLAnchorElement).href;
+          if (href && href.includes('solscan.io/token/')) {
             shouldExtract = true;
             break;
           }

@@ -75,11 +75,29 @@ export class JupiterClient {
     try {
       // 将 UI 数量转换为原始数量（最小单位）
       // 使用更精确的计算，避免精度丢失
-      const inputAmount = Math.floor(tokenAmount * Math.pow(10, decimals));
+      // 使用字符串操作来避免浮点数精度问题
+      const tokenAmountStr = tokenAmount.toString();
+      const [integerPart, decimalPart = ''] = tokenAmountStr.split('.');
       
-      // 验证数量
-      if (inputAmount <= 0) {
-        throw new Error(`无效的卖出数量: ${tokenAmount} (decimals: ${decimals})`);
+      // 计算原始数量
+      let inputAmount: bigint;
+      if (decimalPart.length === 0) {
+        // 没有小数部分
+        inputAmount = BigInt(integerPart) * BigInt(10 ** decimals);
+      } else {
+        // 有小数部分，需要精确处理
+        const decimalDigits = decimalPart.length;
+        const maxDecimals = Math.min(decimalDigits, decimals);
+        const truncatedDecimal = decimalPart.slice(0, maxDecimals).padEnd(maxDecimals, '0');
+        const integerAmount = BigInt(integerPart) * BigInt(10 ** decimals);
+        const decimalAmount = BigInt(truncatedDecimal) * BigInt(10 ** (decimals - maxDecimals));
+        inputAmount = integerAmount + decimalAmount;
+      }
+      
+      // 转换为数字（如果太大则抛出错误）
+      const inputAmountNum = Number(inputAmount);
+      if (inputAmountNum <= 0 || !Number.isSafeInteger(inputAmountNum)) {
+        throw new Error(`无效的卖出数量: ${tokenAmount} (decimals: ${decimals}), 转换后: ${inputAmount.toString()}`);
       }
       
       console.log('[Jupiter] 请求卖出报价:', {
@@ -87,6 +105,7 @@ export class JupiterClient {
         tokenAmount,
         decimals,
         inputAmount: inputAmount.toString(),
+        inputAmountNum,
         slippageBps: this.slippageBps,
         hasApiKey: !!this.apiKey
       });
@@ -94,7 +113,7 @@ export class JupiterClient {
       const url = new URL(JUPITER_QUOTE_API);
       url.searchParams.set('inputMint', tokenMint);
       url.searchParams.set('outputMint', SOL_MINT);
-      url.searchParams.set('amount', inputAmount.toString());
+      url.searchParams.set('amount', inputAmountNum.toString());
       url.searchParams.set('slippageBps', this.slippageBps.toString());
 
       const headers: HeadersInit = {};
