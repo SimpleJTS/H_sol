@@ -104,9 +104,40 @@
   margin-bottom: 12px;
 }
 
-.sol-sniper-balance-icon {
+.sol-sniper-refresh-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
   height: 24px;
+  flex-shrink: 0;
+}
+
+.sol-sniper-refresh-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--success);
+}
+
+.sol-sniper-refresh-btn.refreshing {
+  animation: spin 0.8s linear infinite;
+  color: var(--success);
+}
+
+.sol-sniper-refresh-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .sol-sniper-balance-value {

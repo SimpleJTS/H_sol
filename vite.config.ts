@@ -70,11 +70,29 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     sourcemap: false,
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
   },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
+      buffer: 'buffer',
     },
   },
-  plugins: [copyManifestPlugin()],
+  define: {
+    'global': 'globalThis',
+    'process.env': {},
+  },
+  plugins: [
+    copyManifestPlugin(),
+  ],
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis',
+      },
+    },
+  },
 });
+
