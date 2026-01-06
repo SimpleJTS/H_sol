@@ -31,6 +31,11 @@
           <input type="password" id="helius-key" placeholder="输入您的 Helius API Key">
           <small>免费获取: <a href="https://helius.dev" target="_blank">helius.dev</a></small>
         </div>
+        <div class="form-group">
+          <label for="jupiter-key">Jupiter API Key</label>
+          <input type="password" id="jupiter-key" placeholder="输入您的 Jupiter API Key">
+          <small>获取: <a href="https://station.jup.ag" target="_blank">station.jup.ag</a></small>
+        </div>
       </section>
 
       <!-- 交易设置 -->
@@ -43,6 +48,13 @@
         <div class="form-group">
           <label for="priority-fee">优先费 (SOL)</label>
           <input type="number" id="priority-fee" min="0.0001" max="0.1" step="0.0001" value="0.0001">
+        </div>
+        <div class="form-group">
+          <label class="switch-label">
+            <input type="checkbox" id="enable-cache" checked>
+            <span class="switch-text">启用缓存预加载</span>
+          </label>
+          <small>启用后会在输入CA时预加载交易，提升交易速度</small>
         </div>
       </section>
 
@@ -68,18 +80,19 @@
         </div>
       </section>
 
-      <!-- 安全设置 -->
+      <!-- 网站设置 -->
       <section class="popup-section">
-        <h2>安全设置</h2>
+        <h2>网站设置</h2>
         <div class="form-group">
-          <label for="auto-lock">自动锁定 (分钟)</label>
-          <input type="number" id="auto-lock" min="1" max="1440" value="30">
+          <label for="allowed-sites">允许显示插件的网站（每行一个，留空表示所有网站）</label>
+          <textarea id="allowed-sites" rows="4" placeholder="例如：&#10;https://axiom.trade&#10;https://example.com"></textarea>
+          <small>支持域名或完整URL，例如：axiom.trade 或 https://axiom.trade</small>
         </div>
       </section>
+
     </main>
 
     <footer class="popup-footer">
-      <button class="btn btn-secondary" id="btn-lock">锁定钱包</button>
       <button class="btn btn-primary" id="btn-save">保存设置</button>
     </footer>
   </div>
@@ -91,14 +104,6 @@
       <div class="form-group">
         <label for="private-key">私钥 (Base58格式)</label>
         <input type="password" id="private-key" placeholder="输入私钥">
-      </div>
-      <div class="form-group">
-        <label for="wallet-password">密码</label>
-        <input type="password" id="wallet-password" placeholder="设置密码">
-      </div>
-      <div class="form-group">
-        <label for="wallet-password-confirm">确认密码</label>
-        <input type="password" id="wallet-password-confirm" placeholder="再次输入密码">
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btn-cancel-import">取消</button>

@@ -2,7 +2,7 @@ import { Message, MessageResponse, Config, TradeStatus } from '../shared/types';
 
 // 状态
 let config: Config | null = null;
-let walletState = { address: '', balance: 0, isLocked: true };
+let walletState = { address: '', balance: 0, isLocked: false };
 let currentCA = '';
 let status: TradeStatus = 'idle';
 let preloadTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -74,14 +74,14 @@ function updateStatus(newStatus: TradeStatus, text?: string) {
 
 // 更新按钮状态
 function updateButtons(enabled: boolean) {
-  const canTrade = enabled && !walletState.isLocked && currentCA.length >= 32;
+  const canTrade = enabled && currentCA.length >= 32;
   buyButtons.forEach(btn => btn.disabled = !canTrade);
   sellButtons.forEach(btn => btn.disabled = !canTrade);
 }
 
 // 预加载交易
 async function preloadTrades() {
-  if (!currentCA || currentCA.length < 32 || walletState.isLocked) return;
+  if (!currentCA || currentCA.length < 32) return;
 
   updateStatus('loading', '预加载中...');
   updateButtons(false);
@@ -114,7 +114,7 @@ function handleCAInput(e: Event) {
 
 // 执行买入
 async function handleBuy(amount: number) {
-  if (walletState.isLocked || !currentCA) return;
+  if (!currentCA) return;
 
   updateStatus('executing', `买入 ${amount} SOL...`);
   updateButtons(false);
@@ -128,6 +128,7 @@ async function handleBuy(amount: number) {
     updateStatus('ready', '成功!');
     refreshBalance();
   } catch (error: any) {
+    console.error('[SolSniper] 买入失败:', error);
     showToast(`买入失败: ${error.message}`, 'error');
     updateStatus('error', error.message);
   }
@@ -137,7 +138,7 @@ async function handleBuy(amount: number) {
 
 // 执行卖出
 async function handleSell(percent: number) {
-  if (walletState.isLocked || !currentCA) return;
+  if (!currentCA) return;
 
   updateStatus('executing', `卖出 ${percent}%...`);
   updateButtons(false);
@@ -151,6 +152,7 @@ async function handleSell(percent: number) {
     updateStatus('ready', '成功!');
     refreshBalance();
   } catch (error: any) {
+    console.error('[SolSniper] 卖出失败:', error);
     showToast(`卖出失败: ${error.message}`, 'error');
     updateStatus('error', error.message);
   }
@@ -163,46 +165,21 @@ async function refreshBalance() {
   try {
     walletState = await sendMessage({ type: 'GET_WALLET_STATE' });
     if (balanceEl) {
-      balanceEl.textContent = walletState.balance.toFixed(4);
+      const balance = walletState.balance || 0;
+      balanceEl.textContent = balance.toFixed(4);
     }
     updateButtons(status === 'ready');
   } catch (error) {
     console.error('[SolSniper] 刷新余额失败:', error);
+    // 即使失败也尝试显示当前余额
+    if (balanceEl && walletState) {
+      const balance = walletState.balance || 0;
+      balanceEl.textContent = balance.toFixed(4);
+    }
   }
 }
 
-// 显示密码输入
-function showPasswordPrompt() {
-  const body = panel.querySelector('.sol-sniper-body') as HTMLElement;
-  body.innerHTML = `
-    <div class="sol-sniper-locked">
-      <div class="sol-sniper-locked-icon">🔒</div>
-      <div class="sol-sniper-locked-text">钱包已锁定</div>
-      <input type="password" class="sol-sniper-input" placeholder="输入密码" id="sol-sniper-password">
-      <button class="sol-sniper-unlock-btn" id="sol-sniper-unlock">解锁</button>
-    </div>
-  `;
-
-  const passwordInput = document.getElementById('sol-sniper-password') as HTMLInputElement;
-  const unlockBtn = document.getElementById('sol-sniper-unlock') as HTMLButtonElement;
-
-  unlockBtn.onclick = async () => {
-    const password = passwordInput.value;
-    if (!password) return;
-
-    try {
-      await sendMessage({ type: 'UNLOCK_WALLET', payload: { password } });
-      initTradeUI();
-      refreshBalance();
-    } catch (error: any) {
-      showToast(error.message, 'error');
-    }
-  };
-
-  passwordInput.onkeypress = (e) => {
-    if (e.key === 'Enter') unlockBtn.click();
-  };
-}
+// 锁定功能已移除
 
 // 显示未配置提示
 function showNotConfigured() {
@@ -239,10 +216,11 @@ function initTradeUI() {
 
   body.innerHTML = `
     <div class="sol-sniper-balance">
-      <svg class="sol-sniper-balance-icon" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="10" stroke="#00d26a" stroke-width="2"/>
-        <path d="M8 12h8M12 8v8" stroke="#00d26a" stroke-width="2" stroke-linecap="round"/>
-      </svg>
+      <button class="sol-sniper-refresh-btn" id="sol-refresh-balance-btn" title="刷新余额">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+      </button>
       <span class="sol-sniper-balance-value" id="sol-balance">0.00</span>
       <span class="sol-sniper-balance-unit">SOL</span>
     </div>
@@ -272,6 +250,22 @@ function initTradeUI() {
   caInput = document.getElementById('sol-ca-input') as HTMLInputElement;
   statusDot = document.getElementById('sol-status-dot')!;
   statusText = document.getElementById('sol-status-text')!;
+  
+  // 刷新余额按钮
+  const refreshBtn = document.getElementById('sol-refresh-balance-btn')!;
+  refreshBtn.addEventListener('click', async () => {
+    refreshBtn.classList.add('refreshing');
+    try {
+      await refreshBalance();
+      showToast('余额已刷新', 'success');
+    } catch (error: any) {
+      showToast('刷新失败: ' + (error.message || '未知错误'), 'error');
+    } finally {
+      setTimeout(() => {
+        refreshBtn.classList.remove('refreshing');
+      }, 500);
+    }
+  });
 
   // 创建买入按钮
   const buyGroup = document.getElementById('sol-buy-btns')!;
@@ -394,6 +388,35 @@ function createPanel() {
   panel = document.getElementById('sol-sniper-panel')!;
   const header = document.getElementById('sol-sniper-header')!;
 
+  // 恢复面板大小
+  const savedSize = localStorage.getItem('sol-sniper-size');
+  if (savedSize) {
+    try {
+      const size = JSON.parse(savedSize);
+      if (size.width && size.height) {
+        panel.style.width = size.width + 'px';
+        panel.style.height = size.height + 'px';
+        console.log('[SolSniper] 恢复面板大小:', size.width, 'x', size.height);
+      }
+    } catch (error) {
+      console.error('[SolSniper] 恢复面板大小失败:', error);
+    }
+  }
+
+  // 监听面板大小变化（使用 ResizeObserver）
+  const resizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const { width, height } = entry.contentRect;
+      // 防抖保存
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        localStorage.setItem('sol-sniper-size', JSON.stringify({ width, height }));
+        console.log('[SolSniper] 保存面板大小:', width, 'x', height);
+      }, 500);
+    }
+  });
+  resizeObserver.observe(panel);
+
   // 拖动
   makeDraggable(header, root);
 
@@ -402,9 +425,12 @@ function createPanel() {
     panel.classList.toggle('minimized');
   };
 
-  // 关闭（隐藏）
+  // 关闭（隐藏）- 但不真正移除，只是隐藏
   document.getElementById('sol-close-btn')!.onclick = () => {
     root.style.display = 'none';
+    // 设置标记，表示用户主动关闭（使用 sessionStorage 持久化）
+    root.setAttribute('data-user-closed', 'true');
+    sessionStorage.setItem('sol-sniper-user-closed', 'true');
   };
 
   // 设置按钮 - 打开popup
@@ -423,21 +449,72 @@ function injectStyles() {
   document.head.appendChild(link);
 }
 
-// 初始化
-async function init() {
-  // 避免重复注入
-  if (document.getElementById('sol-sniper-root')) return;
+// 初始化标志
+let isInitialized = false;
+let observer: MutationObserver | null = null;
+let caExtractorObserver: MutationObserver | null = null;
+let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // 先创建UI
-  injectStyles();
-  createPanel();
+// 确保插件存在
+function ensurePanelExists() {
+  // 检查是否是用户主动关闭
+  const userClosed = sessionStorage.getItem('sol-sniper-user-closed');
+  if (userClosed === 'true') {
+    return null; // 用户主动关闭，不自动恢复
+  }
+  
+  // 检查网站是否允许（配置已加载的情况下）
+  if (config && !isSiteAllowed()) {
+    const root = document.getElementById('sol-sniper-root');
+    if (root) {
+      root.style.display = 'none';
+    }
+    return null;
+  }
+  
+  let root = document.getElementById('sol-sniper-root');
+  
+  if (!root) {
+    console.log('[SolSniper] 插件被移除，重新注入...');
+    // 重新创建UI
+    injectStyles();
+    root = createPanel();
+    // 重新初始化UI内容
+    initializePanelContent();
+    // 重新启动 CA 提取
+    startCAExtraction();
+  } else {
+    // 确保插件可见（除非用户主动关闭或网站不允许）
+    const rootClosed = root.getAttribute('data-user-closed');
+    if (rootClosed !== 'true' && root.style.display === 'none') {
+      // 再次检查网站是否允许
+      if (!config || isSiteAllowed()) {
+        root.style.display = '';
+      }
+    }
+  }
+  
+  return root;
+}
 
+// 初始化面板内容
+async function initializePanelContent() {
   try {
     // 获取配置和钱包状态
     [config, walletState] = await Promise.all([
       sendMessage({ type: 'GET_CONFIG' }),
       sendMessage({ type: 'GET_WALLET_STATE' })
     ]);
+
+    // 再次检查网站是否允许（配置可能已更新）
+    if (!isSiteAllowed()) {
+      console.log('[SolSniper] 当前网站不在允许列表中');
+      const root = document.getElementById('sol-sniper-root');
+      if (root) {
+        root.style.display = 'none';
+      }
+      return;
+    }
 
     // 如果没有配置API key，显示配置提示
     if (!config || !config.heliusApiKey) {
@@ -448,18 +525,417 @@ async function init() {
     // 根据钱包状态显示
     if (!walletState.address) {
       showNoWallet();
-    } else if (walletState.isLocked) {
-      showPasswordPrompt();
     } else {
       initTradeUI();
       refreshBalance();
+      // UI 初始化后，启动 CA 自动提取
+      setTimeout(() => {
+        startCAExtraction();
+      }, 500);
     }
 
-    console.log('[SolSniper] 初始化完成');
+    console.log('[SolSniper] 面板内容初始化完成');
   } catch (error) {
-    console.error('[SolSniper] 初始化失败:', error);
+    console.error('[SolSniper] 面板内容初始化失败:', error);
     showNotConfigured();
   }
+}
+
+// 初始化
+async function init() {
+  // 避免重复初始化
+  if (isInitialized) {
+    ensurePanelExists();
+    return;
+  }
+
+  // 等待页面加载完成
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      doInit();
+    });
+  } else {
+    doInit();
+  }
+}
+
+// 检查当前网站是否允许显示插件
+function isSiteAllowed(): boolean {
+  // 如果配置未加载，默认允许（避免初始化时被阻止）
+  if (!config) {
+    console.log('[SolSniper] 配置未加载，默认允许显示');
+    return true;
+  }
+  
+  // 如果允许列表为空，表示所有网站都允许
+  if (!config.allowedSites || config.allowedSites.length === 0) {
+    return true;
+  }
+  
+  const currentUrl = window.location.href;
+  const currentHost = window.location.hostname;
+  
+  // 检查是否匹配允许的网站
+  const isAllowed = config.allowedSites.some(site => {
+    try {
+      const trimmedSite = site.trim();
+      if (!trimmedSite) return false;
+      
+      // 如果是完整URL，检查是否匹配
+      if (trimmedSite.startsWith('http://') || trimmedSite.startsWith('https://')) {
+        return currentUrl.startsWith(trimmedSite) || currentUrl.includes(trimmedSite);
+      }
+      // 如果是域名，检查hostname
+      return currentHost === trimmedSite || currentHost.endsWith('.' + trimmedSite);
+    } catch {
+      return false;
+    }
+  });
+  
+  console.log('[SolSniper] 网站检查:', {
+    currentHost,
+    allowedSites: config.allowedSites,
+    isAllowed
+  });
+  
+  return isAllowed;
+}
+
+// 从 GMGN 页面提取 CA
+function extractCAFromGMGN(): string | null {
+  try {
+    // 方法1: 从带有特定 class 的 <a> 标签中提取
+    // class: "text-text-200 css-759u60" 或包含这些 class
+    const links = Array.from(document.querySelectorAll('a.text-text-200.css-759u60, a[class*="text-text-200"][class*="css-759u60"]'));
+    
+    for (const link of links) {
+      const href = (link as HTMLAnchorElement).href;
+      // 从 solscan.io/token/ 链接中提取 token 地址
+      const match = href.match(/solscan\.io\/token\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (match && match[1]) {
+        const address = match[1];
+        // 验证是否是有效的 Solana 地址长度
+        if (address.length >= 32 && address.length <= 44) {
+          console.log('[SolSniper] 从 GMGN 页面提取到 CA:', address);
+          return address;
+        }
+      }
+    }
+    
+    // 方法2: 从所有包含 solscan.io/token/ 的链接中提取（备用方法）
+    const solscanTokenLinks = Array.from(document.querySelectorAll('a[href*="solscan.io/token/"]'));
+    for (const link of solscanTokenLinks) {
+      const href = (link as HTMLAnchorElement).href;
+      const match = href.match(/solscan\.io\/token\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (match && match[1]) {
+        const address = match[1];
+        if (address.length >= 32 && address.length <= 44) {
+          console.log('[SolSniper] 从 GMGN solscan token 链接提取到 CA:', address);
+          return address;
+        }
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[SolSniper] 从 GMGN 提取 CA 失败:', error);
+    return null;
+  }
+}
+
+// 从 AXIOM 页面提取 CA
+function extractCAFromAxiom(): string | null {
+  try {
+    // 方法1: 从包含 "CA:" 的元素中提取
+    const caElements = Array.from(document.querySelectorAll('*')).filter(el => {
+      const text = el.textContent || '';
+      return text.includes('CA:') && text.length < 200;
+    });
+    
+    for (const el of caElements) {
+      const text = el.textContent || '';
+      // 查找 Solana 地址格式（Base58，通常32-44个字符）
+      const addressMatch = text.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+      if (addressMatch) {
+        const address = addressMatch[0];
+        // 验证是否是有效的 Solana 地址长度
+        if (address.length >= 32 && address.length <= 44) {
+          console.log('[SolSniper] 从 AXIOM 页面提取到 CA:', address);
+          return address;
+        }
+      }
+    }
+    
+    // 方法2: 从 solscan.io 链接中提取
+    const solscanLinks = Array.from(document.querySelectorAll('a[href*="solscan.io/account/"]'));
+    for (const link of solscanLinks) {
+      const href = (link as HTMLAnchorElement).href;
+      const match = href.match(/solscan\.io\/account\/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (match && match[1]) {
+        console.log('[SolSniper] 从 solscan 链接提取到 CA:', match[1]);
+        return match[1];
+      }
+    }
+    
+    // 方法3: 查找包含完整地址的文本（不在链接中）
+    const allText = document.body.textContent || '';
+    // 查找类似 "FvrEADBjznCBv4hZ5YZ6akjf71xAJkTKoijVLg34pump" 的地址
+    const addressPattern = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/g;
+    const matches = allText.match(addressPattern);
+    if (matches) {
+      // 优先选择长度接近44的地址（完整地址）
+      const fullAddress = matches.find(addr => addr.length >= 40);
+      if (fullAddress) {
+        console.log('[SolSniper] 从页面文本提取到 CA:', fullAddress);
+        return fullAddress;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[SolSniper] 提取 CA 失败:', error);
+    return null;
+  }
+}
+
+// 统一的 CA 提取函数（根据网站类型调用不同的提取方法）
+function extractCAFromPage(): string | null {
+  const hostname = window.location.hostname;
+  
+  if (hostname.includes('gmgn.ai')) {
+    return extractCAFromGMGN();
+  } else if (hostname.includes('axiom.trade')) {
+    return extractCAFromAxiom();
+  }
+  
+  // 默认尝试通用方法
+  return extractCAFromAxiom();
+}
+
+// CA 提取防抖
+let caExtractionTimeout: ReturnType<typeof setTimeout> | null = null;
+let lastExtractedCA: string | null = null;
+
+// 执行 CA 提取（带防抖）
+function performCAExtraction(force: boolean = false) {
+  if (!caInput) return;
+  
+  // 清除之前的定时器
+  if (caExtractionTimeout) {
+    clearTimeout(caExtractionTimeout);
+  }
+  
+  // 防抖：延迟执行，避免频繁提取
+  caExtractionTimeout = setTimeout(() => {
+    const ca = extractCAFromPage();
+    if (ca) {
+      // 如果CA变化了，或者强制更新，则更新输入框
+      if (force || ca !== lastExtractedCA) {
+        console.log('[SolSniper] CA 已更新:', lastExtractedCA, '->', ca);
+        caInput.value = ca;
+        currentCA = ca;
+        lastExtractedCA = ca;
+        // 触发输入事件
+        const event = new Event('input', { bubbles: true });
+        caInput.dispatchEvent(event);
+      }
+    } else if (force && lastExtractedCA) {
+      // 如果强制更新但没找到CA，清空之前的值
+      console.log('[SolSniper] 未找到 CA，清空输入框');
+      caInput.value = '';
+      currentCA = '';
+      lastExtractedCA = null;
+    }
+  }, 300); // 300ms 防抖
+}
+
+// 监听页面变化，自动提取 CA
+function startCAExtraction() {
+  const hostname = window.location.hostname;
+  
+  // 只在支持的网站启用（axiom.trade 或 gmgn.ai）
+  if (!hostname.includes('axiom.trade') && !hostname.includes('gmgn.ai')) {
+    return;
+  }
+  
+  console.log('[SolSniper] 启动 CA 自动提取，网站:', hostname);
+  
+  // 立即尝试提取一次（延迟执行，确保 caInput 已初始化）
+  setTimeout(() => {
+    performCAExtraction(true);
+  }, 500);
+  
+  // 监听 DOM 变化，自动提取 CA
+  if (caExtractorObserver) {
+    caExtractorObserver.disconnect();
+  }
+  
+  // 使用更精确的观察器，监听包含 CA 的元素
+  caExtractorObserver = new MutationObserver((mutations) => {
+    // 检查是否有相关元素变化
+    let shouldExtract = false;
+    
+    for (const mutation of mutations) {
+      // 检查是否有节点添加或属性变化
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        // 检查新添加的节点是否包含 CA 相关信息
+        for (const node of Array.from(mutation.addedNodes)) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const el = node as Element;
+            const text = el.textContent || '';
+            // 如果包含 CA: 或 solscan 链接，触发提取
+            if (text.includes('CA:') || 
+                el.querySelector('a[href*="solscan.io/account/"]') ||
+                el.querySelector('a[href*="solscan.io/token/"]') ||
+                el.querySelector('a.text-text-200.css-759u60') ||
+                el.querySelector('a[class*="text-text-200"][class*="css-759u60"]')) {
+              shouldExtract = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      // 检查文本内容变化
+      if (mutation.type === 'characterData' || mutation.type === 'childList') {
+        const target = mutation.target as Element;
+        if (target) {
+          const text = target.textContent || '';
+          if (text.includes('CA:') || text.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/)) {
+            shouldExtract = true;
+            break;
+          }
+        }
+      }
+      
+      // 检查属性变化（class 变化可能影响 GMGN 的链接）
+      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+        const target = mutation.target as Element;
+        if (target && target.tagName === 'A') {
+          const href = (target as HTMLAnchorElement).href;
+          if (href && href.includes('solscan.io/token/')) {
+            shouldExtract = true;
+            break;
+          }
+        }
+      }
+    }
+    
+    if (shouldExtract) {
+      performCAExtraction(false);
+    }
+  });
+  
+  // 监听整个文档的变化，包括属性变化
+  caExtractorObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: false,
+  });
+  
+  // 监听 URL 变化（SPA 路由）
+  let lastUrl = location.href;
+  const urlCheckInterval = setInterval(() => {
+    const currentUrl = location.href;
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
+      console.log('[SolSniper] 检测到 URL 变化，重新提取 CA');
+      // URL 变化时强制重新提取
+      setTimeout(() => {
+        performCAExtraction(true);
+      }, 1000);
+    }
+  }, 500);
+  
+  // 监听 popstate 事件（浏览器前进/后退）
+  window.addEventListener('popstate', () => {
+    console.log('[SolSniper] 检测到 popstate，重新提取 CA');
+    setTimeout(() => {
+      performCAExtraction(true);
+    }, 500);
+  });
+  
+  // 监听 pushState 和 replaceState（SPA 路由）
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  history.pushState = function(...args) {
+    originalPushState.apply(history, args);
+    console.log('[SolSniper] 检测到 pushState，重新提取 CA');
+    setTimeout(() => {
+      performCAExtraction(true);
+    }, 500);
+  };
+  
+  history.replaceState = function(...args) {
+    originalReplaceState.apply(history, args);
+    console.log('[SolSniper] 检测到 replaceState，重新提取 CA');
+    setTimeout(() => {
+      performCAExtraction(true);
+    }, 500);
+  };
+}
+
+async function doInit() {
+  // 先创建UI（不检查网站，让用户看到插件）
+  injectStyles();
+  createPanel();
+  
+  // 初始化面板内容（这里会加载配置并检查网站）
+  await initializePanelContent();
+  
+  // 如果网站不允许，会在 initializePanelContent 中隐藏
+  // 如果允许，继续初始化
+  
+  // 启动 CA 自动提取
+  startCAExtraction();
+  
+  isInitialized = true;
+  console.log('[SolSniper] 初始化完成');
+
+  // 监听 DOM 变化，确保插件不被移除
+  observer = new MutationObserver((mutations) => {
+    const root = document.getElementById('sol-sniper-root');
+    if (!root) {
+      // 检查是否是用户主动关闭
+      const userClosed = sessionStorage.getItem('sol-sniper-user-closed');
+      if (userClosed === 'true') {
+        return; // 用户主动关闭，不自动恢复
+      }
+      
+      console.log('[SolSniper] 检测到插件被移除，重新注入...');
+      // 延迟重新注入，避免频繁触发
+      setTimeout(() => {
+        ensurePanelExists();
+        initializePanelContent();
+      }, 100);
+    }
+  });
+
+  // 监听整个文档的变化
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  // 监听页面导航（SPA）
+  let lastUrl = location.href;
+  const navObserver = new MutationObserver(() => {
+    const url = location.href;
+    if (url !== lastUrl) {
+      lastUrl = url;
+      console.log('[SolSniper] 检测到页面导航，确保插件存在');
+      // 检查是否是用户主动关闭
+      const userClosed = sessionStorage.getItem('sol-sniper-user-closed');
+      if (userClosed !== 'true') {
+        setTimeout(() => {
+          ensurePanelExists();
+        }, 500);
+      }
+    }
+  });
+  navObserver.observe(document, { subtree: true, childList: true });
 }
 
 // 启动
@@ -469,9 +945,25 @@ init();
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'CONFIG_UPDATED') {
     config = message.payload;
-    if (panel) {
-      initTradeUI();
-      refreshBalance();
+    console.log('[SolSniper] 配置已更新，重新检查网站权限');
+    // 重新检查网站权限并更新显示
+    if (isSiteAllowed()) {
+      // 网站允许，确保插件显示
+      const root = document.getElementById('sol-sniper-root');
+      if (root) {
+        root.style.display = '';
+        root.removeAttribute('data-user-closed');
+      }
+      // 重新初始化UI
+      if (panel) {
+        initializePanelContent();
+      }
+    } else {
+      // 网站不允许，隐藏插件
+      const root = document.getElementById('sol-sniper-root');
+      if (root) {
+        root.style.display = 'none';
+      }
     }
   }
 });

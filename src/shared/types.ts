@@ -1,23 +1,29 @@
 // 配置类型
 export interface Config {
   heliusApiKey: string;
+  jupiterApiKey: string;
   privateKey: string; // 加密存储
   slippage: number; // 滑点 bps (100 = 1%)
   priorityFee: number; // 优先费 microLamports
   buyPresets: [number, number, number, number]; // 4个买入预设 (SOL)
   sellPresets: [number, number, number, number]; // 4个卖出预设 (%)
   autoLockMinutes: number;
+  allowedSites: string[]; // 允许显示插件的网站列表（空数组表示所有网站）
+  enableCache: boolean; // 是否启用缓存预加载
 }
 
 // 默认配置
 export const DEFAULT_CONFIG: Config = {
   heliusApiKey: '',
+  jupiterApiKey: '',
   privateKey: '',
   slippage: 100, // 1%
   priorityFee: 100000, // 0.0001 SOL
   buyPresets: [0.36, 0.56, 0.86, 1.06],
   sellPresets: [10, 30, 50, 100],
   autoLockMinutes: 30,
+  allowedSites: [], // 空数组表示所有网站都显示
+  enableCache: true, // 默认启用缓存预加载
 };
 
 // 钱包状态
@@ -62,8 +68,8 @@ export type MessageType =
   | 'EXECUTE_SELL'
   | 'GET_CONFIG'
   | 'SAVE_CONFIG'
-  | 'UNLOCK_WALLET'
-  | 'LOCK_WALLET'
+  | 'IMPORT_WALLET'
+  | 'REMOVE_WALLET'
   | 'GET_TOKEN_BALANCE';
 
 export interface Message {

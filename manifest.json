@@ -10,8 +10,10 @@
   "host_permissions": [
     "https://api.helius.xyz/*",
     "https://mainnet.helius-rpc.com/*",
-    "https://quote-api.jup.ag/*",
-    "https://*.jup.ag/*"
+    "https://api.jup.ag/*",
+    "https://tokens.jup.ag/*",
+    "https://*.jup.ag/*",
+    "https://*.helius-rpc.com/*"
   ],
   "background": {
     "service_worker": "background.js",
