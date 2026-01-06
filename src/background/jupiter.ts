@@ -213,7 +213,10 @@ export class JupiterClient {
     const quotesStart = performance.now();
     const quotes = await Promise.all(
       amounts.map((amount) =>
-        this.getBuyQuote(tokenMint, amount).catch(() => null)
+        this.getBuyQuote(tokenMint, amount).catch((e) => {
+          console.error(`[Jupiter] 获取报价失败 ${amount} SOL:`, e.message);
+          return null;
+        })
       )
     );
     const quotesTime = performance.now() - quotesStart;
@@ -226,7 +229,10 @@ export class JupiterClient {
       if (!quote) return null;
       return this.getSwapTransaction(quote, userPublicKey)
         .then((swap) => ({ amount: amounts[i], quote, swapTx: swap.swapTransaction }))
-        .catch(() => null);
+        .catch((e) => {
+          console.error(`[Jupiter] 获取交易失败 ${amounts[i]} SOL:`, e.message);
+          return null;
+        });
     });
 
     const swaps = await Promise.all(swapPromises);
@@ -321,15 +327,14 @@ export class JupiterClient {
 
   // 获取Token信息 (decimals)
   async getTokenDecimals(mint: string): Promise<number> {
-    // 使用Jupiter的token list缓存
     try {
       const response = await fetch(`https://tokens.jup.ag/token/${mint}`);
       if (response.ok) {
         const data = await response.json();
         return data.decimals || 9;
       }
-    } catch {
-      // fallback
+    } catch (e) {
+      console.error('[Jupiter] 获取代币信息失败:', e);
     }
     return 9; // 默认9位小数
   }
