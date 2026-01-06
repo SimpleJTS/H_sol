@@ -311,50 +311,73 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
       }
     }
 
-    // 发送
-    console.log('[SolSniper] → 发送交易到链上...');
-    stepStart = performance.now();
-    let signature: string;
-    try {
-      signature = await helius.sendTransaction(signedTx);
-      timings['发送交易'] = performance.now() - stepStart;
-      console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易'].toFixed(2), 'ms');
-    } catch (sendError: any) {
-      // 如果发送失败且使用了缓存，可能是交易过期，尝试重新获取
-      if (useCache) {
-        console.warn('[SolSniper] ⚠ 缓存交易发送失败，可能是交易过期，重新获取交易...');
-        console.warn('[SolSniper] 错误:', sendError.message || sendError);
-        
-        // 重新获取报价和构建交易
-        console.log('[SolSniper] → 重新获取买入报价...');
+    // 发送并确认交易（最多重试2次）
+    const MAX_RETRIES = 2;
+    let signature: string = '';
+    let confirmed = false;
+    let lastError = '';
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      console.log('[SolSniper] → 发送交易到链上 (尝试 ' + attempt + '/' + MAX_RETRIES + ')...');
+      stepStart = performance.now();
+
+      try {
+        // 发送并等待确认
+        const result = await helius.sendAndConfirmTransaction(signedTx, 25000);
+        timings['发送+确认(尝试' + attempt + ')'] = performance.now() - stepStart;
+
+        if (result.confirmed) {
+          signature = result.signature;
+          confirmed = true;
+          console.log('[SolSniper] ✓ 交易确认成功，耗时:', timings['发送+确认(尝试' + attempt + ')'].toFixed(2), 'ms');
+          break;
+        }
+
+        // 发送成功但确认失败
+        signature = result.signature;
+        lastError = result.error || '交易未确认';
+        console.warn('[SolSniper] ⚠ 交易未确认:', lastError);
+
+        // 如果是链上执行失败(滑点等)，不重试
+        if (lastError.includes('链上执行失败')) {
+          throw new Error(lastError);
+        }
+
+      } catch (sendError: any) {
+        lastError = sendError.message || '发送失败';
+        console.warn('[SolSniper] ⚠ 交易失败:', lastError);
+
+        // 如果是明确的执行错误，不重试
+        if (lastError.includes('链上执行失败')) {
+          throw sendError;
+        }
+      }
+
+      // 如果需要重试，重新获取交易
+      if (attempt < MAX_RETRIES) {
+        console.log('[SolSniper] → 重新获取交易进行重试...');
+
         stepStart = performance.now();
         const quote = await jupiter.getBuyQuote(ca, amount);
-        timings['获取报价(重试)'] = performance.now() - stepStart;
-        console.log('[SolSniper] ✓ 报价获取成功，耗时:', timings['获取报价(重试)'].toFixed(2), 'ms');
-        
-        console.log('[SolSniper] → 重新构建交易...');
+        timings['获取报价(重试' + attempt + ')'] = performance.now() - stepStart;
+
         stepStart = performance.now();
         const swap = await jupiter.getSwapTransaction(quote, wallet.publicKey);
-        timings['构建交易(重试)'] = performance.now() - stepStart;
-        console.log('[SolSniper] ✓ 交易构建成功，耗时:', timings['构建交易(重试)'].toFixed(2), 'ms');
+        timings['构建交易(重试' + attempt + ')'] = performance.now() - stepStart;
         swapTx = swap.swapTransaction;
-        
-        // 重新签名
+
         stepStart = performance.now();
         signedTx = wallet.signTransaction(swapTx);
-        timings['签名交易(重试)'] = performance.now() - stepStart;
-        console.log('[SolSniper] ✓ 交易签名成功，耗时:', timings['签名交易(重试)'].toFixed(2), 'ms');
-        
-        // 重新发送
-        stepStart = performance.now();
-        signature = await helius.sendTransaction(signedTx);
-        timings['发送交易(重试)'] = performance.now() - stepStart;
-        console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易(重试)'].toFixed(2), 'ms');
-      } else {
-        throw sendError;
+        timings['签名交易(重试' + attempt + ')'] = performance.now() - stepStart;
+
+        console.log('[SolSniper] ✓ 新交易准备完成');
       }
     }
-    
+
+    if (!confirmed) {
+      throw new Error('买入失败: ' + lastError);
+    }
+
     const totalTime = performance.now() - startTime;
     timings['总耗时'] = totalTime;
     
@@ -569,63 +592,81 @@ async function executeSell(ca: string, percent: number): Promise<string> {
       }
     }
 
-    // 发送
-    console.log('[SolSniper] → 发送交易到链上...');
-    stepStart = performance.now();
-    let signature: string;
-    try {
-      signature = await helius.sendTransaction(signedTx);
-      timings['发送交易'] = performance.now() - stepStart;
-      console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易'].toFixed(2), 'ms');
-    } catch (sendError: any) {
-      // 如果发送失败且使用了缓存，可能是交易过期，尝试重新获取
-      if (useCache) {
-        console.warn('[SolSniper] ⚠ 缓存卖出交易发送失败，可能是交易过期，重新获取交易...');
-        console.warn('[SolSniper] 错误:', sendError.message || sendError);
-        
-        // 重新获取余额和计算卖出数量
-        console.log('[SolSniper] → 重新获取Token余额和精度...');
+    // 发送并确认交易（最多重试2次）
+    const MAX_RETRIES = 2;
+    let signature: string = '';
+    let confirmed = false;
+    let lastError = '';
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      console.log('[SolSniper] → 发送交易到链上 (尝试 ' + attempt + '/' + MAX_RETRIES + ')...');
+      stepStart = performance.now();
+
+      try {
+        // 发送并等待确认
+        const result = await helius.sendAndConfirmTransaction(signedTx, 25000);
+        timings['发送+确认(尝试' + attempt + ')'] = performance.now() - stepStart;
+
+        if (result.confirmed) {
+          signature = result.signature;
+          confirmed = true;
+          console.log('[SolSniper] ✓ 交易确认成功，耗时:', timings['发送+确认(尝试' + attempt + ')'].toFixed(2), 'ms');
+          break;
+        }
+
+        // 发送成功但确认失败
+        signature = result.signature;
+        lastError = result.error || '交易未确认';
+        console.warn('[SolSniper] ⚠ 交易未确认:', lastError);
+
+        // 如果是链上执行失败(滑点等)，不重试
+        if (lastError.includes('链上执行失败')) {
+          throw new Error(lastError);
+        }
+
+      } catch (sendError: any) {
+        lastError = sendError.message || '发送失败';
+        console.warn('[SolSniper] ⚠ 交易失败:', lastError);
+
+        // 如果是明确的执行错误，不重试
+        if (lastError.includes('链上执行失败')) {
+          throw sendError;
+        }
+      }
+
+      // 如果需要重试，重新获取交易
+      if (attempt < MAX_RETRIES) {
+        console.log('[SolSniper] → 重新获取交易进行重试...');
+
+        // 重新获取余额
+        const latestRawBalance = await helius.getRawTokenBalance(wallet.publicKey, ca);
+        const latestRawSellAmount = Math.floor((latestRawBalance * percent) / 100);
+        const latestSellAmount = latestRawSellAmount / Math.pow(10, decimals);
+
         stepStart = performance.now();
-        const [tokenBalance, decimals] = await Promise.all([
-          helius.getTokenBalance(wallet.publicKey, ca),
-          jupiter.getTokenDecimals(ca),
-        ]);
-        timings['获取余额(重试)'] = performance.now() - stepStart;
-        
-        const rawTokenBalance = await helius.getRawTokenBalance(wallet.publicKey, ca);
-        const rawSellAmount = Math.floor((rawTokenBalance * percent) / 100);
-        const sellAmount = rawSellAmount / Math.pow(10, decimals);
-        
-        // 重新获取报价和构建交易
-        console.log('[SolSniper] → 重新获取卖出报价...');
-        stepStart = performance.now();
-        const quote = await jupiter.getSellQuote(ca, sellAmount, decimals);
-        timings['获取报价(重试)'] = performance.now() - stepStart;
-        
-        console.log('[SolSniper] → 重新构建交易...');
+        const quote = await jupiter.getSellQuote(ca, latestSellAmount, decimals);
+        timings['获取报价(重试' + attempt + ')'] = performance.now() - stepStart;
+
         stepStart = performance.now();
         const swap = await jupiter.getSwapTransaction(quote, wallet.publicKey);
-        timings['构建交易(重试)'] = performance.now() - stepStart;
+        timings['构建交易(重试' + attempt + ')'] = performance.now() - stepStart;
         swapTx = swap.swapTransaction;
-        
-        // 重新签名
+
         stepStart = performance.now();
         signedTx = wallet.signTransaction(swapTx);
-        timings['签名交易(重试)'] = performance.now() - stepStart;
-        
-        // 重新发送
-        stepStart = performance.now();
-        signature = await helius.sendTransaction(signedTx);
-        timings['发送交易(重试)'] = performance.now() - stepStart;
-        console.log('[SolSniper] ✓ 交易发送成功，耗时:', timings['发送交易(重试)'].toFixed(2), 'ms');
-      } else {
-        throw sendError;
+        timings['签名交易(重试' + attempt + ')'] = performance.now() - stepStart;
+
+        console.log('[SolSniper] ✓ 新交易准备完成');
       }
     }
-    
+
+    if (!confirmed) {
+      throw new Error('卖出失败: ' + lastError);
+    }
+
     const totalTime = performance.now() - startTime;
     timings['总耗时'] = totalTime;
-    
+
     console.log('[SolSniper] ========== 卖出交易完成 ==========');
     console.log('[SolSniper] 交易签名:', signature);
     console.log('[SolSniper] 性能统计:', {

@@ -199,30 +199,88 @@ export class HeliusClient {
     }
   }
 
-  // 确认交易
-  async confirmTransaction(signature: string, timeout = 30000): Promise<boolean> {
+  // 确认交易 - 返回详细状态
+  async confirmTransaction(
+    signature: string,
+    timeout = 30000
+  ): Promise<{ confirmed: boolean; error?: string }> {
     const start = Date.now();
+    let lastStatus: any = null;
+    let checkCount = 0;
+
+    console.log('[Helius] → 等待交易确认，签名:', signature.slice(0, 16) + '...');
+
     while (Date.now() - start < timeout) {
-      const response = await fetch(this.rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'getSignatureStatuses',
-          params: [[signature]],
-        }),
-      });
+      try {
+        checkCount++;
+        const response = await fetch(this.rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getSignatureStatuses',
+            params: [[signature], { searchTransactionHistory: true }],
+          }),
+        });
 
-      const data = await response.json();
-      const status = data.result?.value?.[0];
+        const data = await response.json();
+        const status = data.result?.value?.[0];
+        lastStatus = status;
 
-      if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') {
-        return !status.err;
+        if (status) {
+          if (status.err) {
+            // 交易失败，返回错误
+            const errMsg = typeof status.err === 'object'
+              ? JSON.stringify(status.err)
+              : String(status.err);
+            console.error('[Helius] ✗ 交易链上执行失败:', errMsg);
+            return { confirmed: false, error: `链上执行失败: ${errMsg}` };
+          }
+
+          if (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized') {
+            const elapsed = Date.now() - start;
+            console.log('[Helius] ✓ 交易确认成功，耗时:', elapsed, 'ms, 状态:', status.confirmationStatus);
+            return { confirmed: true };
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Helius] 确认查询失败 (尝试 ' + checkCount + '):', e.message);
       }
 
       await new Promise((r) => setTimeout(r, 500));
     }
-    return false;
+
+    // 超时
+    const elapsed = Date.now() - start;
+    console.warn('[Helius] ⚠ 交易确认超时 (' + elapsed + 'ms, 检查 ' + checkCount + ' 次)');
+
+    if (lastStatus && !lastStatus.err) {
+      return { confirmed: false, error: '交易确认超时，请稍后查看钱包' };
+    }
+    return { confirmed: false, error: '交易可能已过期或被丢弃' };
+  }
+
+  // 发送并确认交易
+  async sendAndConfirmTransaction(
+    signedTx: string,
+    confirmTimeout = 25000
+  ): Promise<{ signature: string; confirmed: boolean; error?: string }> {
+    try {
+      // 发送交易
+      const signature = await this.sendTransaction(signedTx);
+
+      // 等待确认
+      const result = await this.confirmTransaction(signature, confirmTimeout);
+
+      if (result.confirmed) {
+        return { signature, confirmed: true };
+      }
+
+      return { signature, confirmed: false, error: result.error };
+    } catch (e: any) {
+      console.error('[Helius] sendAndConfirmTransaction 失败:', e.message);
+      return { signature: '', confirmed: false, error: e.message };
+    }
   }
 }
