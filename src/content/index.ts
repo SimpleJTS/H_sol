@@ -941,8 +941,18 @@ async function doInit() {
 // 启动
 init();
 
-// 监听配置更新
-chrome.runtime.onMessage.addListener((message) => {
+// 监听来自 background 的日志消息和配置更新
+chrome.runtime.onMessage.addListener((message: Message) => {
+  // 处理日志消息
+  if (message.type === 'LOG') {
+    const { level, args } = message.payload;
+    // 输出到页面控制台
+    const consoleMethod = (console as any)[level] || console.log;
+    consoleMethod('[SolSniper]', ...args);
+    return false; // 不需要响应
+  }
+  
+  // 处理配置更新
   if (message.type === 'CONFIG_UPDATED') {
     config = message.payload;
     console.log('[SolSniper] 配置已更新，重新检查网站权限');

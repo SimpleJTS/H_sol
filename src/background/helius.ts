@@ -171,7 +171,7 @@ export class HeliusClient {
           params: [
             signedTx, // base58 编码的交易
             {
-              skipPreflight: true,
+              skipPreflight: false,
               preflightCommitment: 'processed',
               maxRetries: 3,
               encoding: 'base58', // 明确指定编码格式

@@ -70,7 +70,8 @@ export type MessageType =
   | 'SAVE_CONFIG'
   | 'IMPORT_WALLET'
   | 'REMOVE_WALLET'
-  | 'GET_TOKEN_BALANCE';
+  | 'GET_TOKEN_BALANCE'
+  | 'LOG'; // 日志消息
 
 export interface Message {
   type: MessageType;

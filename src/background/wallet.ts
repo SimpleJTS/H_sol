@@ -55,7 +55,7 @@ export class WalletManager {
 
       // 使用默认密码（如果未提供）
       const defaultPassword = password || 'sol-sniper-default-password';
-      
+
       // 加密存储
       const encrypted = await encrypt(privateKeyBase58.trim(), defaultPassword);
       await saveEncryptedKey(encrypted, address);
@@ -151,17 +151,17 @@ export class WalletManager {
 
     try {
       console.log('[Wallet] → 开始签名交易，原始数据长度:', txBase64.length, '字符');
-      const txBuffer = Buffer.from(txBase64, 'base64');
+    const txBuffer = Buffer.from(txBase64, 'base64');
 
-      try {
-        // 尝试作为 VersionedTransaction 解析
+    try {
+      // 尝试作为 VersionedTransaction 解析
         const parseStart = performance.now();
-        const versionedTx = VersionedTransaction.deserialize(txBuffer);
+      const versionedTx = VersionedTransaction.deserialize(txBuffer);
         const parseTime = performance.now() - parseStart;
         console.log('[Wallet]   解析为 VersionedTransaction，耗时:', parseTime.toFixed(2), 'ms');
         
         const signStart = performance.now();
-        versionedTx.sign([this.keypair]);
+      versionedTx.sign([this.keypair]);
         const signTime = performance.now() - signStart;
         console.log('[Wallet]   签名完成，耗时:', signTime.toFixed(2), 'ms');
         
@@ -177,14 +177,14 @@ export class WalletManager {
         return signedTx;
       } catch (versionedError) {
         console.log('[Wallet] VersionedTransaction 解析失败，尝试 Legacy Transaction');
-        // 回退到 Legacy Transaction
+      // 回退到 Legacy Transaction
         const parseStart = performance.now();
-        const legacyTx = Transaction.from(txBuffer);
+      const legacyTx = Transaction.from(txBuffer);
         const parseTime = performance.now() - parseStart;
         console.log('[Wallet]   解析为 Legacy Transaction，耗时:', parseTime.toFixed(2), 'ms');
         
         const signStart = performance.now();
-        legacyTx.sign(this.keypair);
+      legacyTx.sign(this.keypair);
         const signTime = performance.now() - signStart;
         console.log('[Wallet]   签名完成，耗时:', signTime.toFixed(2), 'ms');
         
