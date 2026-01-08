@@ -140,6 +140,19 @@ export class WalletManager {
     }
   }
 
+  // 签名 Transaction 对象
+  signTransactionObject(tx: Transaction | VersionedTransaction): Transaction | VersionedTransaction {
+    if (!this.keypair) {
+      throw new Error('钱包未初始化，请重新导入钱包');
+    }
+    if (tx instanceof VersionedTransaction) {
+      tx.sign([this.keypair]);
+    } else {
+      tx.sign(this.keypair);
+    }
+    return tx;
+  }
+
   // 签名交易 (支持legacy和versioned)
   // 返回 base58 编码的字符串（Solana RPC 需要 base58）
   signTransaction(txBase64: string): string {

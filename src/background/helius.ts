@@ -2,18 +2,22 @@ import { LAMPORTS_PER_SOL } from '../shared/types';
 
 export class HeliusClient {
   private apiKey: string;
-  private rpcUrl: string;
+  private _rpcUrl: string;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
-    this.rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${apiKey}`;
+    this._rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${apiKey}`;
+  }
+
+  get rpcUrl(): string {
+    return this._rpcUrl;
   }
 
   // 获取SOL余额
   async getBalance(address: string): Promise<number> {
     const startTime = performance.now();
     try {
-      const response = await fetch(this.rpcUrl, {
+      const response = await fetch(this._rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -72,7 +76,7 @@ export class HeliusClient {
   async getRawTokenBalance(address: string, mint: string): Promise<number> {
     const startTime = performance.now();
     try {
-      const response = await fetch(this.rpcUrl, {
+      const response = await fetch(this._rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -161,7 +165,7 @@ export class HeliusClient {
     const startTime = performance.now();
     try {
       console.log('[Helius] → 发送交易到链上，交易长度:', signedTx.length, '字符');
-      const response = await fetch(this.rpcUrl, {
+      const response = await fetch(this._rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -203,7 +207,7 @@ export class HeliusClient {
   async confirmTransaction(signature: string, timeout = 30000): Promise<boolean> {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      const response = await fetch(this.rpcUrl, {
+      const response = await fetch(this._rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

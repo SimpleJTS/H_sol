@@ -6,7 +6,7 @@ let walletState = { address: '', balance: 0, isLocked: false };
 
 // DOM元素
 const heliusKeyInput = document.getElementById('helius-key') as HTMLInputElement;
-const jupiterKeyInput = document.getElementById('jupiter-key') as HTMLInputElement;
+const useJitoInput = document.getElementById('use-jito') as HTMLInputElement;
 const slippageInput = document.getElementById('slippage') as HTMLInputElement;
 const priorityFeeInput = document.getElementById('priority-fee') as HTMLInputElement;
 
@@ -60,7 +60,7 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
 // 填充表单
 function fillForm() {
   heliusKeyInput.value = config.heliusApiKey || '';
-  jupiterKeyInput.value = config.jupiterApiKey || '';
+  useJitoInput.checked = config.useJito !== false; // 默认 true
   slippageInput.value = (config.slippage / 100).toString();
   priorityFeeInput.value = (config.priorityFee / 1_000_000_000).toFixed(4);
 
@@ -89,13 +89,13 @@ function collectFormData(): Partial<Config> {
 
   return {
     heliusApiKey: heliusKeyInput.value.trim(),
-    jupiterApiKey: jupiterKeyInput.value.trim(),
     slippage: Math.round(parseFloat(slippageInput.value) * 100),
     priorityFee: Math.round(parseFloat(priorityFeeInput.value) * 1_000_000_000),
     buyPresets: buyInputs.map((input) => parseFloat(input.value)) as [number, number, number, number],
     sellPresets: sellInputs.map((input) => parseFloat(input.value)) as [number, number, number, number],
     allowedSites,
     enableCache: enableCacheInput.checked,
+    useJito: useJitoInput.checked,
   };
 }
 
@@ -143,11 +143,6 @@ async function saveSettings() {
 
   if (!data.heliusApiKey) {
     showToast('请输入 Helius API Key', 'error');
-    return;
-  }
-
-  if (!data.jupiterApiKey) {
-    showToast('请输入 Jupiter API Key', 'error');
     return;
   }
 
