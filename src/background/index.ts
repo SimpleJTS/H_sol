@@ -1,5 +1,6 @@
 import { HeliusClient } from './helius';
 import { PumpClient } from './pump';
+import { RaydiumClient } from './raydium';
 import { JitoClient, BundleStatus } from './jito';
 import { WalletManager } from './wallet';
 import { getConfig, saveConfig } from '../shared/storage';
@@ -11,6 +12,7 @@ import bs58 from 'bs58';
 // 全局实例
 let helius: HeliusClient | null = null;
 let pump: PumpClient | null = null;
+let raydium: RaydiumClient | null = null;
 let jito: JitoClient | null = null;
 const wallet = new WalletManager();
 
@@ -51,10 +53,10 @@ function logToPage(level: 'log' | 'warn' | 'error', ...args: any[]) {
   });
 }
 
-// 检查 Token 是否在 Pump.fun（未毕业）
-async function isPumpToken(ca: string): Promise<boolean> {
+// 判断 Token 类型（Pump 内盘 或 Raydium 外盘）
+async function getTokenType(ca: string): Promise<'pump' | 'raydium'> {
   if (!helius) {
-    return true; // 默认使用 Pump.fun
+    return 'pump'; // 默认使用 Pump.fun
   }
 
   try {
@@ -71,8 +73,8 @@ async function isPumpToken(ca: string): Promise<boolean> {
     const info = await connection.getAccountInfo(bondingCurve);
 
     if (!info) {
-      logToPage('log', '[Market] 未找到 bonding curve，不是 Pump.fun Token');
-      return false;
+      logToPage('log', '[Market] 未找到 bonding curve，使用 Raydium（外盘）');
+      return 'raydium';
     }
 
     // 检查数据长度
@@ -84,27 +86,28 @@ async function isPumpToken(ca: string): Promise<boolean> {
     } else if (Array.isArray(info.data)) {
       curveData = Buffer.from(info.data);
     } else {
-      logToPage('log', '[Market] Bonding curve 数据格式无效');
-      return false;
+      logToPage('log', '[Market] Bonding curve 数据格式无效，使用 Raydium');
+      return 'raydium';
     }
 
     // 如果数据长度为 0 或太短，不是有效的 Pump.fun token
     if (curveData.length < 24) {
-      logToPage('log', '[Market] Bonding curve 数据太短');
-      return false;
+      logToPage('log', '[Market] Bonding curve 数据太短，使用 Raydium');
+      return 'raydium';
     }
 
     // 检查 bonding curve 的状态
-    // data[64] === 1 表示已迁移（毕业），不在 Pump.fun 了
+    // data[64] === 1 表示已毕业，使用 Raydium 外盘
     if (curveData.length > 64 && curveData[64] === 1) {
-      logToPage('log', '[Market] Token 已毕业，不在 Pump.fun');
-      return false;
+      logToPage('log', '[Market] Token 已毕业，使用 Raydium（外盘）');
+      return 'raydium';
     }
 
-    return true;
+    logToPage('log', '[Market] Token 未毕业，使用 Pump.fun（内盘）');
+    return 'pump';
   } catch (error) {
-    logToPage('warn', '[Market] 检测 Pump.fun 状态失败:', error);
-    return true; // 检测失败，默认使用 Pump.fun
+    logToPage('warn', '[Market] 检测市场类型失败，默认使用 Pump.fun:', error);
+    return 'pump';
   }
 }
 
@@ -116,6 +119,7 @@ async function init() {
       helius = new HeliusClient(config.heliusApiKey);
       const rpcUrl = helius.rpcUrl || `https://mainnet.helius-rpc.com/?api-key=${config.heliusApiKey}`;
       pump = new PumpClient(rpcUrl, config.priorityFee, config.slippage);
+      raydium = new RaydiumClient(rpcUrl, config.priorityFee);
 
       // 初始化 Jito 客户端
       if (config.useJito) {
@@ -148,8 +152,9 @@ async function updateClients(config: Config) {
     helius = new HeliusClient(config.heliusApiKey.trim());
     const rpcUrl = helius.rpcUrl || `https://mainnet.helius-rpc.com/?api-key=${config.heliusApiKey}`;
 
-    // 更新 Pump 客户端
+    // 更新 Pump 和 Raydium 客户端
     pump = new PumpClient(rpcUrl, config.priorityFee, config.slippage);
+    raydium = new RaydiumClient(rpcUrl, config.priorityFee);
 
     // 更新 Jito 客户端
     if (config.useJito) {
@@ -163,6 +168,7 @@ async function updateClients(config: Config) {
   } else {
     helius = null;
     pump = null;
+    raydium = null;
     jito = null;
     logToPage('warn', 'Helius API Key 为空，已清除所有客户端');
   }
@@ -230,12 +236,12 @@ async function preloadTrades(ca: string): Promise<void> {
     logToPage('log', '钱包地址:', wallet.publicKey);
 
     // 检查并确保客户端已初始化
-    if (!helius || !pump) {
+    if (!helius || !pump || !raydium) {
       logToPage('warn', '客户端未初始化，尝试重新初始化...');
       const config = await getConfig();
       await updateClients(config);
 
-      if (!helius || !pump) {
+      if (!helius || !pump || !raydium) {
         throw new Error('Not ready: 请检查 Helius API Key 是否正确配置');
       }
       logToPage('log', '客户端重新初始化成功');
@@ -243,12 +249,11 @@ async function preloadTrades(ca: string): Promise<void> {
 
     const config = await getConfig();
 
-    // 检查是否是 Pump.fun Token
-    const isPump = await isPumpToken(ca);
-    if (!isPump) {
-      throw new Error('该 Token 不在 Pump.fun 上（可能已毕业），暂不支持交易');
-    }
-    logToPage('log', '确认是 Pump.fun Token');
+    // 检测市场类型（内盘/外盘）
+    const tokenType = await getTokenType(ca);
+    const usePump = tokenType === 'pump';
+    const client = usePump ? pump : raydium;
+    logToPage('log', '市场类型:', usePump ? 'Pump.fun（内盘）' : 'Raydium（外盘）');
 
     // 如果禁用缓存，跳过预加载
     if (config.enableCache === false) {
@@ -263,7 +268,7 @@ async function preloadTrades(ca: string): Promise<void> {
     // 并行获取基础数据
     const fetchStart = performance.now();
     const [decimals, tokenBalance] = await Promise.all([
-      pump!.getTokenDecimals(ca),
+      client!.getTokenDecimals(ca),
       helius.getTokenBalance(userAddress, ca).catch((error) => {
         logToPage('error', '获取token余额失败:', error);
         return 0;
@@ -274,7 +279,7 @@ async function preloadTrades(ca: string): Promise<void> {
     const buyTrades = new Map<number, { transaction: Transaction | VersionedTransaction }>();
     for (const amount of config.buyPresets) {
       try {
-        const tx = await pump!.buildBuyTransaction(ca, amount, userAddress);
+        const tx = await client!.buildBuyTransaction(ca, amount, userAddress);
         buyTrades.set(amount, { transaction: tx });
       } catch (error: any) {
         logToPage('warn', `预加载买入交易失败 (${amount} SOL):`, error.message);
@@ -296,7 +301,7 @@ async function preloadTrades(ca: string): Promise<void> {
             const rawSellAmount = Math.floor((rawTokenBalance * percent) / 100);
             if (rawSellAmount > 0) {
               const sellAmount = rawSellAmount / Math.pow(10, decimals);
-              const tx = await pump!.buildSellTransaction(ca, sellAmount, decimals, userAddress);
+              const tx = await client!.buildSellTransaction(ca, sellAmount, decimals, userAddress);
               sellTrades.set(percent, { transaction: tx });
             }
           } catch (error: any) {
@@ -364,12 +369,12 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
     logToPage('log', '钱包地址:', wallet.publicKey);
 
     // 检查并确保客户端已初始化
-    if (!helius || !pump) {
+    if (!helius || !pump || !raydium) {
       logToPage('warn', '客户端未初始化，尝试重新初始化...');
       const config = await getConfig();
       await updateClients(config);
 
-      if (!helius || !pump) {
+      if (!helius || !pump || !raydium) {
         throw new Error('Wallet not configured: 请检查 Helius API Key 是否正确配置');
       }
       logToPage('log', '客户端重新初始化成功');
@@ -377,11 +382,11 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
 
     const config = await getConfig();
 
-    // 检查是否是 Pump.fun Token
-    const isPump = await isPumpToken(ca);
-    if (!isPump) {
-      throw new Error('该 Token 不在 Pump.fun 上（可能已毕业），暂不支持交易');
-    }
+    // 检测市场类型（内盘/外盘）
+    const tokenType = await getTokenType(ca);
+    const usePump = tokenType === 'pump';
+    const client = usePump ? pump : raydium;
+    logToPage('log', '市场类型:', usePump ? 'Pump.fun（内盘）' : 'Raydium（外盘）');
 
     let transaction: Transaction | VersionedTransaction | null = null;
     let stepStart: number;
@@ -406,9 +411,9 @@ async function executeBuy(ca: string, amount: number): Promise<string> {
     }
 
     if (!useCache || !transaction) {
-      logToPage('log', '→ 构建买入交易 (Pump.fun)...');
+      logToPage('log', `→ 构建买入交易 (${usePump ? 'Pump.fun' : 'Raydium'})...`);
       stepStart = performance.now();
-      transaction = await pump!.buildBuyTransaction(ca, amount, wallet.publicKey);
+      transaction = await client!.buildBuyTransaction(ca, amount, wallet.publicKey);
       timings['构建交易'] = performance.now() - stepStart;
       logToPage('log', '✓ 交易构建成功，耗时:', timings['构建交易'].toFixed(2), 'ms');
     }
@@ -544,12 +549,12 @@ async function executeSell(ca: string, percent: number): Promise<string> {
     logToPage('log', '钱包地址:', wallet.publicKey);
 
     // 检查并确保客户端已初始化
-    if (!helius || !pump) {
+    if (!helius || !pump || !raydium) {
       logToPage('warn', '客户端未初始化，尝试重新初始化...');
       const config = await getConfig();
       await updateClients(config);
 
-      if (!helius || !pump) {
+      if (!helius || !pump || !raydium) {
         throw new Error('Wallet not configured: 请检查 Helius API Key 是否正确配置');
       }
       logToPage('log', '客户端重新初始化成功');
@@ -557,11 +562,11 @@ async function executeSell(ca: string, percent: number): Promise<string> {
 
     const config = await getConfig();
 
-    // 检查是否是 Pump.fun Token
-    const isPump = await isPumpToken(ca);
-    if (!isPump) {
-      throw new Error('该 Token 不在 Pump.fun 上（可能已毕业），暂不支持交易');
-    }
+    // 检测市场类型（内盘/外盘）
+    const tokenType = await getTokenType(ca);
+    const usePump = tokenType === 'pump';
+    const client = usePump ? pump : raydium;
+    logToPage('log', '市场类型:', usePump ? 'Pump.fun（内盘）' : 'Raydium（外盘）');
 
     // 获取最新的token余额和精度
     logToPage('log', '→ 获取最新Token余额和精度...');
@@ -569,7 +574,7 @@ async function executeSell(ca: string, percent: number): Promise<string> {
 
     const [tokenBalance, decimals] = await Promise.all([
       helius.getTokenBalance(wallet.publicKey, ca),
-      pump!.getTokenDecimals(ca),
+      client!.getTokenDecimals(ca),
     ]);
     timings['获取余额'] = performance.now() - stepStart;
     logToPage('log', '✓ 余额获取成功，耗时:', timings['获取余额'].toFixed(2), 'ms');
@@ -628,9 +633,9 @@ async function executeSell(ca: string, percent: number): Promise<string> {
 
       const sellAmount = rawSellAmount / Math.pow(10, decimals);
 
-      logToPage('log', '→ 构建卖出交易 (Pump.fun)...');
+      logToPage('log', `→ 构建卖出交易 (${usePump ? 'Pump.fun' : 'Raydium'})...`);
       stepStart = performance.now();
-      transaction = await pump!.buildSellTransaction(ca, sellAmount, decimals, wallet.publicKey);
+      transaction = await client!.buildSellTransaction(ca, sellAmount, decimals, wallet.publicKey);
       timings['构建交易'] = performance.now() - stepStart;
       logToPage('log', '✓ 交易构建成功，耗时:', timings['构建交易'].toFixed(2), 'ms');
     }
