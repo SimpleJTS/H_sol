@@ -119,7 +119,7 @@ async function init() {
       helius = new HeliusClient(config.heliusApiKey);
       const rpcUrl = helius.rpcUrl || `https://mainnet.helius-rpc.com/?api-key=${config.heliusApiKey}`;
       pump = new PumpClient(rpcUrl, config.priorityFee, config.slippage);
-      raydium = new RaydiumClient(rpcUrl, config.priorityFee);
+      raydium = new RaydiumClient(rpcUrl, config.priorityFee, config.slippage);
 
       // 初始化 Jito 客户端
       if (config.useJito) {

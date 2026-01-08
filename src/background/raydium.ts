@@ -1,23 +1,28 @@
-import { Connection, PublicKey, Transaction, SystemProgram, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { Buffer } from 'buffer';
+import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { LAMPORTS_PER_SOL } from '../shared/types';
 
-// Raydium 程序 ID
-const RAYDIUM_AMM_V4 = new PublicKey('675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8');
-const RAYDIUM_CLMM = new PublicKey('CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK');
+// Raydium Trade API 端点
+const RAYDIUM_API_BASE = 'https://api-v3.raydium.io';
+
+// SOL 的 mint 地址
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 export class RaydiumClient {
   private connection: Connection;
   private priorityFee: number;
+  private slippage: number; // bps, 100 = 1%
 
-  constructor(rpcUrl: string, priorityFee: number = 100000) {
+  constructor(rpcUrl: string, priorityFee: number = 100000, slippage: number = 500) {
     this.connection = new Connection(rpcUrl, 'confirmed');
     this.priorityFee = priorityFee;
+    this.slippage = slippage;
   }
 
-  updateSettings(priorityFee: number) {
+  updateSettings(priorityFee: number, slippage?: number) {
     this.priorityFee = priorityFee;
+    if (slippage !== undefined) {
+      this.slippage = slippage;
+    }
   }
 
   // 获取 Token 精度
@@ -28,10 +33,112 @@ export class RaydiumClient {
       if (mintInfo.value && 'parsed' in mintInfo.value.data) {
         return (mintInfo.value.data as any).parsed.info.decimals;
       }
-      return 9; // 默认精度
+      return 9;
     } catch (error) {
       console.warn('[Raydium] 获取精度失败，使用默认值 9:', error);
       return 9;
+    }
+  }
+
+  // 获取优先费建议
+  private async getPriorityFee(): Promise<number> {
+    try {
+      const response = await fetch(`${RAYDIUM_API_BASE}/main/auto-fee`);
+      if (response.ok) {
+        const data = await response.json();
+        // 使用 high 级别的优先费
+        return data.data?.h || this.priorityFee;
+      }
+    } catch (error) {
+      console.warn('[Raydium] 获取优先费失败，使用默认值:', error);
+    }
+    return this.priorityFee;
+  }
+
+  // 获取 swap 报价
+  private async getSwapQuote(
+    inputMint: string,
+    outputMint: string,
+    amount: number,
+    isInputAmount: boolean = true
+  ): Promise<any> {
+    const endpoint = isInputAmount ? 'swap-base-in' : 'swap-base-out';
+    const url = `${RAYDIUM_API_BASE}/compute/${endpoint}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${this.slippage}&txVersion=V0`;
+
+    console.log('[Raydium] 获取报价:', url);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Raydium API 错误: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(`Raydium 报价失败: ${data.msg || JSON.stringify(data)}`);
+    }
+
+    console.log('[Raydium] 报价结果:', {
+      inputAmount: data.data.inputAmount,
+      outputAmount: data.data.outputAmount,
+      priceImpact: data.data.priceImpactPct,
+    });
+
+    return data.data;
+  }
+
+  // 获取 swap 交易
+  private async getSwapTransaction(
+    quoteData: any,
+    userPublicKey: string,
+    wrapSol: boolean = true,
+    unwrapSol: boolean = true
+  ): Promise<VersionedTransaction | Transaction> {
+    const priorityFee = await this.getPriorityFee();
+
+    const requestBody = {
+      computeUnitPriceMicroLamports: String(priorityFee),
+      swapResponse: quoteData,
+      txVersion: 'V0',
+      wallet: userPublicKey,
+      wrapSol,
+      unwrapSol,
+    };
+
+    console.log('[Raydium] 获取交易...');
+
+    const response = await fetch(`${RAYDIUM_API_BASE}/transaction/swap-base-in`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Raydium 交易构建失败: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.success || !data.data || data.data.length === 0) {
+      throw new Error(`Raydium 交易构建失败: ${data.msg || '无交易数据'}`);
+    }
+
+    // 解析交易（通常只有一个交易）
+    const txData = data.data[0].transaction;
+    const txBuffer = Buffer.from(txData, 'base64');
+
+    // 尝试解析为 VersionedTransaction
+    try {
+      const versionedTx = VersionedTransaction.deserialize(txBuffer);
+      console.log('[Raydium] ✓ 获取 VersionedTransaction 成功');
+      return versionedTx;
+    } catch {
+      // 如果不是 VersionedTransaction，尝试解析为 Legacy Transaction
+      const legacyTx = Transaction.from(txBuffer);
+      console.log('[Raydium] ✓ 获取 Legacy Transaction 成功');
+      return legacyTx;
     }
   }
 
@@ -40,69 +147,23 @@ export class RaydiumClient {
     tokenMint: string,
     solAmount: number,
     userPublicKey: string
-  ): Promise<Transaction> {
+  ): Promise<Transaction | VersionedTransaction> {
     const startTime = performance.now();
     try {
       console.log('[Raydium] 构建买入交易:', { tokenMint, solAmount, userPublicKey });
-      
-      const transaction = new Transaction();
-      const userKey = new PublicKey(userPublicKey);
-      const mintKey = new PublicKey(tokenMint);
-      const solAmountLamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
 
-      // 添加优先费指令
-      const priorityFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: this.priorityFee,
-      });
-      transaction.add(priorityFeeIx);
+      // SOL 金额转换为 lamports
+      const amountLamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
 
-      // 添加计算单元限制
-      const computeLimitIx = ComputeBudgetProgram.setComputeUnitLimit({
-        units: 200000,
-      });
-      transaction.add(computeLimitIx);
+      // 获取报价
+      const quoteData = await this.getSwapQuote(SOL_MINT, tokenMint, amountLamports, true);
 
-      // 获取或创建用户的 Token 账户
-      const userTokenAccount = await getAssociatedTokenAddress(mintKey, userKey);
-      
-      try {
-        await getAccount(this.connection, userTokenAccount);
-      } catch {
-        // Token 账户不存在，需要创建
-        const createATAIx = createAssociatedTokenAccountInstruction(
-          userKey,
-          userTokenAccount,
-          userKey,
-          mintKey
-        );
-        transaction.add(createATAIx);
-      }
-
-      // Raydium 买入指令
-      // 注意：这里需要根据实际的 Raydium 合约接口调整
-      // 需要找到对应的流动性池地址
-      const buyIx = new TransactionInstruction({
-        programId: RAYDIUM_AMM_V4,
-        keys: [
-          { pubkey: userKey, isSigner: true, isWritable: true },
-          { pubkey: mintKey, isSigner: false, isWritable: false },
-          { pubkey: userTokenAccount, isSigner: false, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-        ],
-        data: Buffer.from([]), // 需要根据实际合约接口填充
-      });
-
-      transaction.add(buyIx);
-
-      // 获取最新 blockhash
-      const { blockhash } = await this.connection.getLatestBlockhash('finalized');
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = userKey;
+      // 获取交易
+      const transaction = await this.getSwapTransaction(quoteData, userPublicKey, true, false);
 
       const totalTime = performance.now() - startTime;
       console.log('[Raydium] ✓ 买入交易构建成功，耗时:', totalTime.toFixed(2), 'ms');
-      
+
       return transaction;
     } catch (error: any) {
       const totalTime = performance.now() - startTime;
@@ -117,54 +178,23 @@ export class RaydiumClient {
     tokenAmount: number,
     decimals: number,
     userPublicKey: string
-  ): Promise<Transaction> {
+  ): Promise<Transaction | VersionedTransaction> {
     const startTime = performance.now();
     try {
       console.log('[Raydium] 构建卖出交易:', { tokenMint, tokenAmount, decimals, userPublicKey });
-      
-      const transaction = new Transaction();
-      const userKey = new PublicKey(userPublicKey);
-      const mintKey = new PublicKey(tokenMint);
-      const tokenAmountRaw = BigInt(Math.floor(tokenAmount * Math.pow(10, decimals)));
 
-      // 添加优先费指令
-      const priorityFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: this.priorityFee,
-      });
-      transaction.add(priorityFeeIx);
+      // Token 金额转换为最小单位
+      const amountRaw = Math.floor(tokenAmount * Math.pow(10, decimals));
 
-      // 添加计算单元限制
-      const computeLimitIx = ComputeBudgetProgram.setComputeUnitLimit({
-        units: 200000,
-      });
-      transaction.add(computeLimitIx);
+      // 获取报价
+      const quoteData = await this.getSwapQuote(tokenMint, SOL_MINT, amountRaw, true);
 
-      // 获取用户的 Token 账户
-      const userTokenAccount = await getAssociatedTokenAddress(mintKey, userKey);
-
-      // Raydium 卖出指令
-      const sellIx = new TransactionInstruction({
-        programId: RAYDIUM_AMM_V4,
-        keys: [
-          { pubkey: userKey, isSigner: true, isWritable: true },
-          { pubkey: mintKey, isSigner: false, isWritable: false },
-          { pubkey: userTokenAccount, isSigner: false, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-        ],
-        data: Buffer.from([]), // 需要根据实际合约接口填充
-      });
-
-      transaction.add(sellIx);
-
-      // 获取最新 blockhash
-      const { blockhash } = await this.connection.getLatestBlockhash('finalized');
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = userKey;
+      // 获取交易
+      const transaction = await this.getSwapTransaction(quoteData, userPublicKey, false, true);
 
       const totalTime = performance.now() - startTime;
       console.log('[Raydium] ✓ 卖出交易构建成功，耗时:', totalTime.toFixed(2), 'ms');
-      
+
       return transaction;
     } catch (error: any) {
       const totalTime = performance.now() - startTime;
@@ -173,4 +203,3 @@ export class RaydiumClient {
     }
   }
 }
-
