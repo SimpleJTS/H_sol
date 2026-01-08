@@ -2,6 +2,8 @@ import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solan
 import { LAMPORTS_PER_SOL } from '../shared/types';
 
 // Raydium Trade API 端点
+// 注意: 交易相关的 API 使用 transaction-v1，而不是 api-v3
+const RAYDIUM_SWAP_HOST = 'https://transaction-v1.raydium.io';
 const RAYDIUM_API_BASE = 'https://api-v3.raydium.io';
 
 // SOL 的 mint 地址
@@ -63,7 +65,7 @@ export class RaydiumClient {
     isInputAmount: boolean = true
   ): Promise<any> {
     const endpoint = isInputAmount ? 'swap-base-in' : 'swap-base-out';
-    const url = `${RAYDIUM_API_BASE}/compute/${endpoint}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${this.slippage}&txVersion=V0`;
+    const url = `${RAYDIUM_SWAP_HOST}/compute/${endpoint}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${this.slippage}&txVersion=V0`;
 
     console.log('[Raydium] 获取报价:', url);
 
@@ -107,7 +109,7 @@ export class RaydiumClient {
 
     console.log('[Raydium] 获取交易...');
 
-    const response = await fetch(`${RAYDIUM_API_BASE}/transaction/swap-base-in`, {
+    const response = await fetch(`${RAYDIUM_SWAP_HOST}/transaction/swap-base-in`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
