@@ -1,13 +1,5 @@
-import { Connection, Transaction, VersionedTransaction, SystemProgram } from '@solana/web3.js';
-import { Buffer } from 'buffer';
-import bs58 from 'bs58';
-
 // Jito Bundle API 端点
 const JITO_BUNDLE_API = 'https://mainnet.block-engine.jito.wtf/api/v1/bundles';
-
-export interface JitoBundleResponse {
-  uuid: string;
-}
 
 export interface BundleStatus {
   uuid: string;
@@ -17,11 +9,9 @@ export interface BundleStatus {
 }
 
 export class JitoClient {
-  private connection: Connection;
-  private tipAccount: string; // Jito tip 账户
+  private tipAccount: string;
 
-  constructor(rpcUrl: string, tipAccount: string = '96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmxvrDjjF') {
-    this.connection = new Connection(rpcUrl, 'confirmed');
+  constructor(_rpcUrl: string, tipAccount: string = '96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmxvrDjjF') {
     this.tipAccount = tipAccount;
   }
 
@@ -48,19 +38,9 @@ export class JitoClient {
 
         console.log('[Jito] → 发送 Bundle，包含', signedTransactions.length, '个交易', attempt > 0 ? `(重试 ${attempt}/${retries})` : '');
 
-        // Jito Bundle API 期望接收 base64 编码的交易数组
-        // signedTransactions 是 base58 编码的字符串，需要解码后转换为 base64
-        const transactions = signedTransactions.map(txBase58 => {
-          try {
-            // 解码 base58 得到 Buffer
-            const txBuffer = bs58.decode(txBase58);
-            // 转换为 base64
-            return txBuffer.toString('base64');
-          } catch (error: any) {
-            console.error('[Jito] 交易编码转换失败:', error);
-            throw new Error(`交易编码转换失败: ${error.message}`);
-          }
-        });
+        // Jito Bundle API 期望接收 base58 编码的交易数组
+        // signedTransactions 已经是 base58 编码的字符串，直接使用
+        const transactions = signedTransactions;
 
         const response = await fetch(JITO_BUNDLE_API, {
           method: 'POST',
@@ -201,8 +181,11 @@ export class JitoClient {
   async sendAndConfirmBundle(
     signedTransactions: string[],
     timeout: number = 30000
-  ): Promise<BundleStatus> {
+  ): Promise<BundleStatus | null> {
     const bundleId = await this.sendBundle(signedTransactions);
+    if (!bundleId) {
+      return null; // 限流，返回 null 以便降级
+    }
     return await this.pollBundleStatus(bundleId, timeout);
   }
 }
